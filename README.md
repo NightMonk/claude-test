@@ -55,6 +55,9 @@ your home screen.
 Because it's a single Node server plus a SQLite file, one instance *is* your
 private cloud: every device you log into reads and writes the same database.
 
+**👉 For a click-by-click hosting walkthrough (recommended: Railway), see
+[DEPLOY.md](DEPLOY.md).**
+
 ## Working with Claude — turning notes into profiles
 
 This app deliberately keeps the rough notes and the polished write-up separate:
