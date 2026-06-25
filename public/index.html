@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>People</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Login -->
+  <div id="login" class="screen login hidden">
+    <div class="login-card">
+      <div class="brand"><span class="brand-mark">◆</span> People</div>
+      <p class="muted">Your private databank. Enter your passcode.</p>
+      <form id="login-form">
+        <input id="passcode" type="password" inputmode="numeric" placeholder="Passcode" autocomplete="current-password" />
+        <button type="submit">Unlock</button>
+      </form>
+      <p id="login-error" class="error hidden"></p>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <button id="back-btn" class="icon-btn hidden" aria-label="Back">‹</button>
+      <h1 id="title">People</h1>
+      <button id="search-btn" class="icon-btn" aria-label="Search">⌕</button>
+    </header>
+
+    <div id="search-bar" class="search-bar hidden">
+      <input id="search-input" type="search" placeholder="Search names, notes, places…" />
+    </div>
+
+    <main id="view"><!-- rendered by app.js --></main>
+
+    <button id="fab" class="fab" aria-label="Add person">＋</button>
+
+    <nav class="tabbar">
+      <button class="tab active" data-view="home">Home</button>
+      <button class="tab" data-view="friends_family">Friends</button>
+      <button class="tab" data-view="colleagues">Work</button>
+      <button class="tab" data-view="dating">Dating</button>
+      <button class="tab" data-view="more">More</button>
+    </nav>
+  </div>
+
+  <!-- Slide-up sheet for forms -->
+  <div id="sheet" class="sheet-backdrop hidden">
+    <div class="sheet">
+      <div class="sheet-grab"></div>
+      <div id="sheet-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

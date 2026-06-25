@@ -1,0 +1,11 @@
+node_modules/
+*.log
+
+# Local environment / secrets
+.env
+
+# Database files (your personal data — never commit these)
+data/
+*.sqlite
+*.sqlite3
+*.db
