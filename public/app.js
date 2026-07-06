@@ -142,12 +142,13 @@ function avatar(p) {
   return `<div class="avatar cat-${esc(p.category)}" style="--c:var(--c)">${esc(initials)}</div>`;
 }
 
-function personRow(p) {
-  const sub = [CATS[p.category], p.met_place].filter(Boolean).join(' · ');
+function personRow(p, { showCategory = true } = {}) {
+  const sub = [showCategory ? CATS[p.category] : null, p.met_place].filter(Boolean).join(' · ');
+  const pill = showCategory ? `<span class="pill cat-${esc(p.category)}">${esc(CATS[p.category])}</span>` : '';
   const row = el(`<div class="card cat-${esc(p.category)}"><div class="person-row">
     ${avatar(p)}
     <div class="meta"><div class="name">${esc(p.name)}</div><div class="sub">${esc(sub)}</div></div>
-    <span class="pill cat-${esc(p.category)}">${esc(CATS[p.category])}</span>
+    ${pill}
   </div></div>`);
   row.addEventListener('click', () => navigate('person', { id: p.id }));
   return row;
@@ -223,7 +224,7 @@ async function renderList(root, { category, q, title }) {
     root.appendChild(el(`<div class="empty">${q ? 'No matches.' : 'No one here yet. Tap ＋ to add someone.'}</div>`));
     return;
   }
-  for (const p of people) root.appendChild(personRow(p));
+  for (const p of people) root.appendChild(personRow(p, { showCategory: !category }));
 }
 
 function fmtDate(iso, withTime) {
