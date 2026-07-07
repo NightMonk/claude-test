@@ -1,0 +1,547 @@
+<title>Tempo — an ADHD-first task app</title>
+<style>
+  :root {
+    /* palette — chosen, not defaulted: indigo rhythm + coral "now" + mint "done" */
+    --ground: #f5f6fb;
+    --raised: #ffffff;
+    --ink: #1b1d2a;
+    --ink-soft: #565a72;
+    --ink-faint: #8b8fa8;
+    --line: #e5e7f2;
+    --line-soft: #eef0f8;
+    --primary: #5b5bd6;      /* focus / rhythm */
+    --primary-soft: #ebebfb;
+    --now: #ff7a59;          /* the single motivating "just start / now" accent */
+    --now-soft: #ffece6;
+    --done: #34c88a;         /* completion / momentum */
+    --done-soft: #e2f7ee;
+    --shadow: 30px 40px 80px -40px rgba(27, 29, 42, .35);
+    --shadow-sm: 0 2px 6px -2px rgba(27, 29, 42, .12);
+    --radius: 22px;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: "SF Mono", "Cascadia Code", ui-monospace, "Roboto Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #101019;
+      --raised: #1c1d2b;
+      --ink: #f2f3fb;
+      --ink-soft: #a6a9c4;
+      --ink-faint: #6c6f8c;
+      --line: #2b2c40;
+      --line-soft: #24253550;
+      --primary: #8f8ff5;
+      --primary-soft: #26264a;
+      --now: #ff9377;
+      --now-soft: #3a2620;
+      --done: #4fd79c;
+      --done-soft: #16342a;
+      --shadow: 40px 50px 90px -50px rgba(0, 0, 0, .8);
+      --shadow-sm: 0 2px 8px -2px rgba(0, 0, 0, .5);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #f5f6fb; --raised: #fff; --ink: #1b1d2a; --ink-soft: #565a72;
+    --ink-faint: #8b8fa8; --line: #e5e7f2; --line-soft: #eef0f8;
+    --primary: #5b5bd6; --primary-soft: #ebebfb; --now: #ff7a59; --now-soft: #ffece6;
+    --done: #34c88a; --done-soft: #e2f7ee; --shadow: 30px 40px 80px -40px rgba(27,29,42,.35);
+    --shadow-sm: 0 2px 6px -2px rgba(27,29,42,.12);
+  }
+  :root[data-theme="dark"] {
+    --ground: #101019; --raised: #1c1d2b; --ink: #f2f3fb; --ink-soft: #a6a9c4;
+    --ink-faint: #6c6f8c; --line: #2b2c40; --line-soft: #24253550;
+    --primary: #8f8ff5; --primary-soft: #26264a; --now: #ff9377; --now-soft: #3a2620;
+    --done: #4fd79c; --done-soft: #16342a; --shadow: 40px 50px 90px -50px rgba(0,0,0,.8);
+    --shadow-sm: 0 2px 8px -2px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---- hero ---- */
+  header.hero { padding: 84px 0 40px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-size: 13px; font-weight: 600; letter-spacing: .04em;
+    color: var(--primary); text-transform: uppercase;
+    padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--raised);
+  }
+  .eyebrow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--now); }
+  h1.title {
+    font-size: clamp(38px, 6vw, 68px); line-height: 1.02; letter-spacing: -.03em;
+    font-weight: 800; margin: 26px 0 0; text-wrap: balance; max-width: 15ch;
+  }
+  h1.title em { font-style: normal; color: var(--primary); }
+  .lede {
+    font-size: clamp(17px, 2.2vw, 20px); color: var(--ink-soft);
+    max-width: 60ch; margin: 22px 0 0;
+  }
+  .basis { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+  .basis span {
+    font-size: 13.5px; color: var(--ink-soft); background: var(--raised);
+    border: 1px solid var(--line); padding: 7px 13px; border-radius: 999px;
+  }
+  .basis b { color: var(--ink); font-weight: 650; }
+
+  /* ---- section scaffolding ---- */
+  section { padding: 46px 0; }
+  .sec-head { max-width: 62ch; margin-bottom: 34px; }
+  .sec-kicker {
+    font-size: 12.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--now);
+  }
+  h2 { font-size: clamp(26px, 4vw, 36px); letter-spacing: -.02em; margin: 10px 0 0; text-wrap: balance; }
+  .sec-head p { color: var(--ink-soft); margin: 12px 0 0; font-size: 16.5px; }
+
+  /* ---- device gallery ---- */
+  .gallery {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr));
+    gap: 40px 28px; align-items: start;
+  }
+  .device { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .phone {
+    width: 258px; background: var(--raised); border-radius: 42px;
+    border: 1px solid var(--line); padding: 12px;
+    box-shadow: var(--shadow); position: relative;
+  }
+  .phone::before {
+    content: ""; position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    width: 92px; height: 22px; background: var(--ink); border-radius: 999px;
+    opacity: .9; z-index: 4;
+  }
+  .screen {
+    background: var(--ground); border-radius: 32px; overflow: hidden;
+    height: 500px; display: flex; flex-direction: column; position: relative;
+  }
+  .stat {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 20px 6px; font-size: 13px; font-weight: 650; color: var(--ink);
+  }
+  .stat .sig { display: flex; gap: 5px; align-items: center; }
+  .stat .sig i { width: 15px; height: 10px; border: 1.5px solid var(--ink); border-radius: 3px; display: inline-block; opacity: .5; }
+  .body { flex: 1; overflow: hidden; padding: 6px 16px 0; }
+  .caption {
+    text-align: center; max-width: 258px;
+  }
+  .caption h3 { margin: 0; font-size: 16px; letter-spacing: -.01em; }
+  .caption p { margin: 5px 0 0; font-size: 13.5px; color: var(--ink-soft); line-height: 1.45; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 10px; }
+  .pill {
+    font-size: 11px; font-weight: 600; color: var(--primary);
+    background: var(--primary-soft); padding: 3px 9px; border-radius: 999px;
+  }
+
+  /* screen internals */
+  .greet { font-size: 19px; font-weight: 750; letter-spacing: -.02em; margin: 8px 2px 1px; }
+  .date { font-size: 12.5px; color: var(--ink-faint); margin: 0 2px 12px; }
+  .momentum {
+    background: var(--raised); border: 1px solid var(--line); border-radius: 16px;
+    padding: 13px 14px; display: flex; align-items: center; gap: 13px; margin-bottom: 15px;
+  }
+  .ring { flex: none; }
+  .momentum .m-txt b { font-size: 14px; }
+  .momentum .m-txt div { font-size: 11.5px; color: var(--ink-soft); }
+  .momentum .m-txt .time { color: var(--primary); font-weight: 650; }
+  .lbl { font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--ink-faint); text-transform: uppercase; margin: 4px 2px 9px; }
+  .task {
+    background: var(--raised); border: 1px solid var(--line); border-radius: 14px;
+    padding: 11px 12px; margin-bottom: 9px;
+  }
+  .task-top { display: flex; align-items: center; gap: 10px; }
+  .check { width: 19px; height: 19px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+  .check.done { background: var(--done); border-color: var(--done); position: relative; }
+  .check.done::after { content: "✓"; color: #fff; font-size: 12px; position: absolute; inset: 0; display: grid; place-items: center; font-weight: 800; }
+  .t-title { font-size: 13.5px; font-weight: 600; flex: 1; }
+  .t-title.strike { color: var(--ink-faint); text-decoration: line-through; font-weight: 500; }
+  .tag { font-size: 11px; font-weight: 650; color: var(--ink-soft); white-space: nowrap; }
+  .actions { display: flex; gap: 7px; margin: 9px 0 1px; padding-left: 29px; }
+  .btn-now, .btn-ghost {
+    font-size: 11.5px; font-weight: 650; border-radius: 9px; padding: 6px 11px; border: none; cursor: pointer;
+  }
+  .btn-now { background: var(--now); color: #fff; }
+  .btn-ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--line); }
+  .more { text-align: center; font-size: 12.5px; color: var(--ink-faint); margin: 4px 0 12px; }
+  .pickfor {
+    width: 100%; background: var(--primary-soft); color: var(--primary); border: none;
+    font-weight: 700; font-size: 13px; padding: 12px; border-radius: 13px; cursor: pointer;
+  }
+  .tabbar {
+    display: flex; justify-content: space-around; align-items: center;
+    padding: 9px 8px 12px; border-top: 1px solid var(--line); background: var(--raised);
+  }
+  .tabbar span { font-size: 10px; color: var(--ink-faint); display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .tabbar span.on { color: var(--primary); }
+  .tabbar .glyph { font-size: 16px; }
+  .tabbar .add { width: 42px; height: 42px; border-radius: 14px; background: var(--now); color: #fff; display: grid; place-items: center; font-size: 22px; margin-top: -18px; box-shadow: 0 8px 18px -6px var(--now); }
+
+  /* focus screen */
+  .focus { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 0 22px; }
+  .focus .ftitle { font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
+  .timer-wrap { position: relative; margin: 26px 0; }
+  .timer-num { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--mono); font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .firststep { font-size: 13px; color: var(--ink-soft); background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; }
+  .firststep b { color: var(--now); font-weight: 700; }
+  .focus-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .focus-actions button { font-size: 13px; font-weight: 650; padding: 10px 20px; border-radius: 11px; border: none; cursor: pointer; }
+  .fa-pause { background: transparent; border: 1px solid var(--line); color: var(--ink-soft); }
+  .fa-done { background: var(--done); color: #fff; }
+  .ambient { margin-top: 16px; font-size: 12px; color: var(--ink-faint); }
+
+  /* capture screen */
+  .cap { padding: 30px 6px; height: 100%; display: flex; flex-direction: column; }
+  .cap h4 { font-size: 17px; font-weight: 700; letter-spacing: -.01em; margin: 8px 2px 16px; }
+  .cap-input { background: var(--raised); border: 2px solid var(--primary); border-radius: 14px; padding: 14px; font-size: 14px; color: var(--ink); box-shadow: 0 0 0 4px var(--primary-soft); }
+  .cap-input .cursor { display: inline-block; width: 2px; height: 16px; background: var(--primary); vertical-align: -3px; animation: blink 1.1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+  .chip { font-size: 12px; font-weight: 600; padding: 6px 11px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); }
+  .chip.alt { background: var(--now-soft); color: var(--now); }
+  .cap-foot { margin-top: auto; display: flex; align-items: center; gap: 12px; }
+  .cap-foot .mic, .cap-foot .clip { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--raised); display: grid; place-items: center; font-size: 18px; }
+  .cap-foot .addbtn { margin-left: auto; background: var(--primary); color: #fff; border: none; font-weight: 700; font-size: 14px; padding: 12px 26px; border-radius: 12px; }
+
+  /* plan screen */
+  .plan { padding: 24px 6px; height: 100%; display: flex; flex-direction: column; }
+  .plan h4 { font-size: 16px; font-weight: 700; text-align: center; margin: 6px 0 14px; }
+  .dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 22px; }
+  .dots i { width: 26px; height: 6px; border-radius: 3px; background: var(--line); }
+  .dots i.fill { background: var(--primary); }
+  .plancard { background: var(--raised); border: 1px solid var(--line); border-radius: 18px; padding: 22px 18px; box-shadow: var(--shadow-sm); text-align: center; }
+  .plancard .pc-title { font-size: 16px; font-weight: 700; }
+  .plancard .pc-meta { font-size: 12px; color: var(--ink-faint); margin-top: 5px; }
+  .swipe { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 22px; }
+  .swipe button { font-size: 13px; font-weight: 650; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--raised); color: var(--ink-soft); cursor: pointer; }
+  .swipe button.today { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .swipe button.done { color: var(--done); }
+  .capnote { text-align: center; font-size: 12px; color: var(--ink-soft); margin-top: auto; padding-top: 16px; }
+  .capnote b { color: var(--primary); }
+
+  /* goals screen */
+  .goals { padding: 14px 4px; }
+  .goal { background: var(--raised); border: 1px solid var(--line); border-radius: 15px; padding: 13px 14px; margin-bottom: 11px; }
+  .goal-top { display: flex; justify-content: space-between; align-items: center; }
+  .goal-name { font-size: 14px; font-weight: 700; }
+  .goal-pct { font-size: 12px; font-weight: 700; color: var(--primary); }
+  .bar { height: 6px; border-radius: 3px; background: var(--line); margin: 9px 0 9px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
+  .goal-next { font-size: 12px; color: var(--ink-soft); }
+  .goal-next b { color: var(--now); }
+  .streak { font-size: 11px; color: var(--done); font-weight: 700; }
+
+  /* ---- pillars ---- */
+  .pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); gap: 16px; }
+  .pcard { background: var(--raised); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+  .pnum { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--now); letter-spacing: .05em; }
+  .pcard h3 { font-size: 16.5px; margin: 8px 0 6px; letter-spacing: -.01em; }
+  .pcard p { font-size: 13.5px; color: var(--ink-soft); margin: 0; line-height: 1.5; }
+
+  /* ---- windows strip ---- */
+  .winrow { display: grid; grid-template-columns: 1.4fr 1fr; gap: 34px; align-items: center; }
+  .win {
+    background: var(--raised); border: 1px solid var(--line); border-radius: 14px;
+    overflow: hidden; box-shadow: var(--shadow);
+  }
+  .titlebar { display: flex; align-items: center; gap: 7px; padding: 10px 13px; border-bottom: 1px solid var(--line); }
+  .titlebar i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+  .titlebar .cap-bar { margin-left: 10px; flex: 1; background: var(--ground); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--ink-faint); padding: 5px 11px; }
+  .titlebar .hotkey { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+  .win-body { display: grid; grid-template-columns: 116px 1fr; min-height: 250px; }
+  .sidebar { border-right: 1px solid var(--line); padding: 12px 10px; display: flex; flex-direction: column; gap: 3px; }
+  .sidebar a { font-size: 12.5px; color: var(--ink-soft); padding: 7px 9px; border-radius: 8px; text-decoration: none; }
+  .sidebar a.on { background: var(--primary-soft); color: var(--primary); font-weight: 650; }
+  .win-main { padding: 16px 18px; }
+  .win-main .greet { font-size: 16px; margin-top: 0; }
+  .win-task { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
+  .win-side-copy h3 { font-size: 22px; letter-spacing: -.02em; margin: 0 0 10px; text-wrap: balance; }
+  .win-side-copy p { color: var(--ink-soft); font-size: 15px; margin: 0; }
+
+  /* ---- footer ---- */
+  footer { padding: 46px 0 70px; border-top: 1px solid var(--line); margin-top: 30px; }
+  footer .fnote { color: var(--ink-faint); font-size: 13.5px; max-width: 66ch; }
+  footer .flist { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; font-size: 13.5px; }
+  footer .flist a { color: var(--primary); text-decoration: none; font-weight: 600; }
+
+  @media (max-width: 720px) {
+    .winrow { grid-template-columns: 1fr; }
+    header.hero { padding: 54px 0 24px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ring-anim { animation: none !important; }
+    .cap-input .cursor { animation: none; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow"><span class="dot"></span>Product design · working name “Tempo”</span>
+    <h1 class="title">A task app that helps you <em>start</em>, not just store.</h1>
+    <p class="lede">A cross-platform to-do, reminder &amp; goals app for iPhone and Windows, built
+      around what an ADHD brain actually finds hard — starting, sensing time, and remembering — rather
+      than around folders and tags.</p>
+    <div class="basis">
+      <span>Built from the best of <b>TickTick</b> + <b>Any.do</b></span>
+      <span><b>iPhone</b> &amp; <b>Windows</b>, one brain</span>
+      <span>Offline-first · reminders that <b>break through</b></span>
+    </div>
+  </header>
+
+  <!-- ============ SCREENS ============ -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-kicker">The core screens</div>
+      <h2>Five surfaces, each fighting a specific ADHD wall.</h2>
+      <p>Every screen answers one question — <em>what do I do right now?</em> — and refuses to become an
+        overwhelming list. Below are the signature screens as they’d look on iPhone.</p>
+    </div>
+
+    <div class="gallery">
+
+      <!-- TODAY -->
+      <div class="device">
+        <div class="phone"><div class="screen">
+          <div class="stat"><span>9:41</span><span class="sig"><i></i></span></div>
+          <div class="body">
+            <div class="greet">Good morning, Alex</div>
+            <div class="date">Tuesday 7 July</div>
+            <div class="momentum">
+              <svg class="ring" width="46" height="46" viewBox="0 0 46 46">
+                <circle cx="23" cy="23" r="19" fill="none" stroke="var(--line)" stroke-width="5"/>
+                <circle cx="23" cy="23" r="19" fill="none" stroke="var(--done)" stroke-width="5"
+                        stroke-linecap="round" stroke-dasharray="119.4" stroke-dashoffset="47.8"
+                        transform="rotate(-90 23 23)"/>
+              </svg>
+              <div class="m-txt">
+                <b>3 of 5 done today</b>
+                <div><span class="time">~1h 10m</span> left of your plan</div>
+              </div>
+            </div>
+            <div class="lbl">Today</div>
+            <div class="task">
+              <div class="task-top"><span class="check"></span><span class="t-title">Email school re: trip</span><span class="tag">⚡ 5m</span></div>
+              <div class="actions"><button class="btn-now">Just start · 2 min</button></div>
+            </div>
+            <div class="task">
+              <div class="task-top"><span class="check"></span><span class="t-title">Quarterly report</span><span class="tag">🔋 45m</span></div>
+              <div class="actions"><button class="btn-now">Just start</button><button class="btn-ghost">Break it down ↴</button></div>
+            </div>
+            <div class="task"><div class="task-top"><span class="check done"></span><span class="t-title strike">Move the car</span></div></div>
+            <div class="more">⌄ 2 more</div>
+            <button class="pickfor">✨ Pick something for me</button>
+          </div>
+          <div class="tabbar">
+            <span class="on"><span class="glyph">⌂</span>Today</span>
+            <span><span class="glyph">▤</span>Upcoming</span>
+            <span class="add">＋</span>
+            <span><span class="glyph">◎</span>Goals</span>
+            <span><span class="glyph">✱</span>More</span>
+          </div>
+        </div></div>
+        <div class="caption">
+          <h3>Today — the anti-overwhelm home</h3>
+          <p>A small, finite set — never the full backlog. Each card carries the help to <em>act</em>.</p>
+          <div class="pill-row"><span class="pill">Anti-overwhelm</span><span class="pill">Initiation</span><span class="pill">No shame</span></div>
+        </div>
+      </div>
+
+      <!-- FOCUS -->
+      <div class="device">
+        <div class="phone"><div class="screen">
+          <div class="stat"><span>9:41</span><span class="sig"><i></i></span></div>
+          <div class="focus">
+            <div class="ftitle">Quarterly report</div>
+            <div class="timer-wrap">
+              <svg width="168" height="168" viewBox="0 0 168 168">
+                <circle cx="84" cy="84" r="74" fill="none" stroke="var(--line)" stroke-width="10"/>
+                <circle class="ring-anim" cx="84" cy="84" r="74" fill="none" stroke="var(--now)" stroke-width="10"
+                        stroke-linecap="round" stroke-dasharray="464.9" transform="rotate(-90 84 84)"/>
+              </svg>
+              <div class="timer-num">17:42</div>
+            </div>
+            <div class="firststep"><b>First step:</b> open last quarter’s doc and copy the template.</div>
+            <div class="focus-actions"><button class="fa-pause">Pause</button><button class="fa-done">Done ✓</button></div>
+            <div class="ambient">🔊 ambient: rain ▸</div>
+          </div>
+        </div></div>
+        <div class="caption">
+          <h3>Focus mode — one thing &amp; a visible clock</h3>
+          <p>The rest of the world disappears. A shrinking ring makes time <em>perceptible</em>, not just digits.</p>
+          <div class="pill-row"><span class="pill">Initiation</span><span class="pill">Time-blindness</span></div>
+        </div>
+      </div>
+
+      <!-- CAPTURE -->
+      <div class="device">
+        <div class="phone"><div class="screen">
+          <div class="stat"><span>9:41</span><span class="sig"><i></i></span></div>
+          <div class="cap">
+            <h4>What’s on your mind?</h4>
+            <div class="cap-input">call dentist tomorrow 3pm<span class="cursor"></span></div>
+            <div class="chips"><span class="chip">📅 Tomorrow · 15:00</span><span class="chip alt">＃ Health</span></div>
+            <div class="cap-foot">
+              <div class="mic">🎤</div><div class="clip">📎</div>
+              <button class="addbtn">Add</button>
+            </div>
+          </div>
+        </div></div>
+        <div class="caption">
+          <h3>Quick capture — under 3 seconds</h3>
+          <p>Type or speak. Nothing required but the words; the date, list &amp; priority are parsed for you. Filing happens later.</p>
+          <div class="pill-row"><span class="pill">Frictionless capture</span></div>
+        </div>
+      </div>
+
+      <!-- PLAN -->
+      <div class="device">
+        <div class="phone"><div class="screen">
+          <div class="stat"><span>9:41</span><span class="sig"><i></i></span></div>
+          <div class="plan">
+            <h4>Plan your day</h4>
+            <div class="dots"><i class="fill"></i><i class="fill"></i><i class="fill"></i><i></i><i></i></div>
+            <div class="plancard">
+              <div class="pc-title">Reply to landlord</div>
+              <div class="pc-meta">from Inbox · ⚡ 5m</div>
+            </div>
+            <div class="swipe">
+              <button class="today">↑ Today</button>
+              <button>↓ Tomorrow</button>
+              <button>← Later</button>
+              <button class="done">✓ Done</button>
+            </div>
+            <div class="capnote">You’ve planned <b>~2h 40m</b> today — a comfortable load.</div>
+          </div>
+        </div></div>
+        <div class="caption">
+          <h3>Plan-my-day — one decision at a time</h3>
+          <p>A morning swipe ritual that ends in a calm, achievable Today — and warns you before you overload it.</p>
+          <div class="pill-row"><span class="pill">Anti-overwhelm</span><span class="pill">No shame</span></div>
+        </div>
+      </div>
+
+      <!-- GOALS -->
+      <div class="device">
+        <div class="phone"><div class="screen">
+          <div class="stat"><span>9:41</span><span class="sig"><i></i></span></div>
+          <div class="body goals">
+            <div class="greet" style="margin-left:2px">Goals</div>
+            <div class="date">Always shows the next physical step</div>
+            <div class="goal">
+              <div class="goal-top"><span class="goal-name">Learn Spanish</span><span class="goal-pct">34%</span></div>
+              <div class="bar"><i style="width:34%"></i></div>
+              <div class="goal-next">Next: <b>5-min lesson today</b> →</div>
+            </div>
+            <div class="goal">
+              <div class="goal-top"><span class="goal-name">Launch side project</span><span class="goal-pct">12%</span></div>
+              <div class="bar"><i style="width:12%"></i></div>
+              <div class="goal-next">Next: <b>register the domain</b> →</div>
+            </div>
+            <div class="goal">
+              <div class="goal-top"><span class="goal-name">Get fit</span><span class="goal-pct">50% <span class="streak">🔥 7</span></span></div>
+              <div class="bar"><i style="width:50%"></i></div>
+              <div class="goal-next">Next: <b>gym today</b> · Mon/Wed/Fri</div>
+            </div>
+          </div>
+        </div></div>
+        <div class="caption">
+          <h3>Goals — that reach down to today</h3>
+          <p>A big goal is never a vague cloud. Progress you feel fill, and one concrete next action, always.</p>
+          <div class="pill-row"><span class="pill">Goals → action</span><span class="pill">Reward</span></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ PILLARS ============ -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-kicker">Why it’s different</div>
+      <h2>Eight design pillars, drawn from how ADHD actually works.</h2>
+      <p>Not “TickTick with a new colour scheme.” Every feature traces back to one of these.</p>
+    </div>
+    <div class="pillars">
+      <div class="pcard"><div class="pnum">P1</div><h3>Frictionless capture</h3><p>Working memory is leaky — catch the thought in seconds, from the lock screen, your voice, or a Windows hotkey, or it’s gone.</p></div>
+      <div class="pcard"><div class="pnum">P2</div><h3>Anti-overwhelm</h3><p>A long list triggers freeze. Today stays small and finite; the backlog exists but is deliberately out of sight.</p></div>
+      <div class="pcard"><div class="pnum">P3</div><h3>Initiation help</h3><p>The signature layer no rival has: “Just start — 2 min,” auto-breakdown to a tiny first step, and “pick one for me.”</p></div>
+      <div class="pcard"><div class="pnum">P4</div><h3>Make time visible</h3><p>Fights time-blindness — shrinking rings, time estimates, and “time left today” so <em>not-now</em> becomes <em>now</em> before it surprises you.</p></div>
+      <div class="pcard"><div class="pnum">P5</div><h3>Reminders that break through</h3><p>Time-sensitive, escalating, location-aware — and they nudge again if ignored, because one silent ping never lands.</p></div>
+      <div class="pcard"><div class="pnum">P6</div><h3>Reward the brain</h3><p>Dopamine by design: satisfying completion, a visible “done today,” and momentum you can feel.</p></div>
+      <div class="pcard"><div class="pnum">P7</div><h3>Be kind — no shame</h3><p>Undone rolls forward gently. No red overdue pile, no guilt copy, no punishing streak resets. Kindness is retention.</p></div>
+      <div class="pcard"><div class="pnum">P8</div><h3>Goals reach down to today</h3><p>Goal → project → the single next physical action, surfaced in daily planning so big goals never rot in a folder.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ WINDOWS ============ -->
+  <section>
+    <div class="winrow">
+      <div class="win">
+        <div class="titlebar">
+          <i></i><i></i><i></i>
+          <span class="cap-bar">＋ Add task…</span>
+          <span class="hotkey">Ctrl + Alt + Space</span>
+        </div>
+        <div class="win-body">
+          <nav class="sidebar">
+            <a class="on" href="#">⌂ Today</a>
+            <a href="#">▤ Upcoming</a>
+            <a href="#">◎ Goals</a>
+            <a href="#">⧉ Lists</a>
+            <a href="#">⏱ Focus</a>
+            <a href="#">✓ Done</a>
+          </nav>
+          <div class="win-main">
+            <div class="greet">Good morning, Alex</div>
+            <div class="date" style="margin-bottom:10px">3 of 5 done · ~1h 10m left</div>
+            <div class="win-task"><span class="check"></span>Email school re: trip <span style="margin-left:auto;color:var(--ink-faint)">⚡ 5m</span></div>
+            <div class="win-task"><span class="check"></span>Quarterly report <span style="margin-left:auto;color:var(--ink-faint)">🔋 45m</span></div>
+            <div class="win-task"><span class="check done"></span><span style="color:var(--ink-faint);text-decoration:line-through">Move the car</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="win-side-copy">
+        <h3>The same brain, on your desktop.</h3>
+        <p>Native on Windows too — keyboard-first, a global hotkey that captures from any app, and a focus timer that floats over your work. What you catch on your phone at the bus stop is already here when you sit down.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p class="fnote">This is a design prototype — a visual pitch, not a shipping build. The full written
+      design (product vision, the ADHD design engine, feature spec, UX, technical architecture, and roadmap)
+      lives alongside it in the <b>design/</b> folder.</p>
+    <div class="flist">
+      <a href="../README.md">Overview</a>
+      <a href="../02-adhd-design-principles.md">ADHD design engine</a>
+      <a href="../03-features.md">Feature spec</a>
+      <a href="../04-ux-and-screens.md">UX &amp; screens</a>
+      <a href="../05-architecture.md">Architecture</a>
+      <a href="../06-roadmap.md">Roadmap</a>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  // Live shrinking focus ring — the subject-appropriate motion moment (time made visible).
+  (function () {
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var ring = document.querySelector('.ring-anim');
+    if (!ring) return;
+    var LEN = 464.9;
+    if (reduce) { ring.setAttribute('stroke-dashoffset', LEN * 0.28); return; }
+    var start = null, DURATION = 24000; // a slow, calming sweep
+    function frame(t) {
+      if (start === null) start = t;
+      var p = ((t - start) % DURATION) / DURATION;      // 0 → 1 loop
+      ring.setAttribute('stroke-dashoffset', (LEN * p).toFixed(1));
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+</script>
