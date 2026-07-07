@@ -320,6 +320,40 @@ button { cursor: pointer; }
 .fx-presets button { background: var(--raised); border: 1px solid var(--line); color: var(--ink-soft); border-radius: 999px; padding: 7px 15px; font-size: 13px; font-weight: 600; }
 .fx-presets button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
 
+/* ---- today actions + filters ---- */
+.today-actions { display: flex; gap: 9px; margin: 14px 0 4px; }
+.pill-action {
+  flex: 1; border: 1px solid var(--line); background: var(--raised); color: var(--ink);
+  border-radius: 12px; padding: 11px; font-weight: 650; font-size: 13.5px; box-shadow: var(--shadow-sm);
+}
+.pill-action.accent { background: var(--primary-soft); color: var(--primary); border-color: transparent; }
+.pill-action:active { transform: scale(.97); }
+.filters { display: flex; gap: 7px; margin: 12px 0 2px; overflow-x: auto; padding-bottom: 2px; }
+.filters .chip-btn { white-space: nowrap; }
+
+/* ---- swipe feedback ---- */
+.task { touch-action: pan-y; user-select: none; }
+.task.swipe-complete { background: var(--done-soft); border-color: var(--done); }
+.task.swipe-snooze { background: var(--now-soft); border-color: var(--now); }
+
+/* ---- pick-for-me ---- */
+.pick-card { text-align: center; padding: 22px 16px; background: var(--ground); border: 1px solid var(--line); border-radius: 16px; margin-bottom: 16px; }
+.pick-title { font-size: 19px; font-weight: 750; letter-spacing: -.01em; }
+
+/* ---- plan-my-day ---- */
+#plan .plan-progress { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; max-width: 280px; margin-bottom: 14px; }
+#plan .plan-progress i { width: 22px; height: 5px; border-radius: 3px; background: var(--line); }
+#plan .plan-progress i.fill { background: var(--primary); }
+.plan-sub { font-size: 13px; color: var(--ink-faint); margin-bottom: 22px; }
+.plan-card { background: var(--raised); border: 1px solid var(--line); border-radius: 20px; padding: 30px 22px; box-shadow: var(--shadow); max-width: 330px; width: 100%; text-align: center; }
+.plan-title { font-size: 21px; font-weight: 750; letter-spacing: -.02em; text-wrap: balance; }
+.plan-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 26px; width: 100%; max-width: 330px; }
+.plan-choices button { padding: 15px; border-radius: 13px; border: 1px solid var(--line); background: var(--raised); color: var(--ink); font-weight: 700; font-size: 15px; }
+.plan-choices .pc-today { background: var(--primary); color: #fff; border-color: var(--primary); }
+.plan-choices .pc-done { color: var(--done); }
+.plan-choices button:active { transform: scale(.96); }
+.plan-skip { margin-top: 16px; background: none; border: none; color: var(--ink-faint); font-size: 14px; font-weight: 600; text-decoration: underline; }
+
 /* ---- toast + confetti ---- */
 .toast {
   position: fixed; left: 50%; bottom: calc(var(--tabh) + 26px); transform: translateX(-50%);

@@ -13,7 +13,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 let TOKEN = localStorage.getItem('tempo_token') || '';
-const state = { tab: 'today', lists: [], goals: [], sub: null, calMode: 'month', calDate: new Date(), calSel: todayStr() };
+const state = { tab: 'today', lists: [], goals: [], sub: null, calMode: 'month', calDate: new Date(), calSel: todayStr(), todayFilter: 'all' };
 const expanded = new Set();       // task ids showing their sub-tasks
 const notified = new Set();       // reminder ids already fired this session
 
@@ -149,7 +149,50 @@ function taskCard(task) {
   </div>`);
 
   if (expanded.has(task.id)) card.appendChild(renderSubs(task));
+  if (!task.done && !task.parent_id) attachSwipe(card, task);
   return card;
+}
+
+// Swipe right → complete · swipe left → move to tomorrow. touch-action:pan-y in
+// CSS lets vertical scrolling stay native while we own the horizontal drag.
+function attachSwipe(card, task) {
+  let startX = 0, startY = 0, dx = 0, dragging = false, decided = false, horiz = false;
+  card.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button, input, a')) return;
+    startX = e.clientX; startY = e.clientY; dx = 0; dragging = true; decided = false; horiz = false;
+  });
+  card.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    dx = e.clientX - startX; const dy = e.clientY - startY;
+    if (!decided && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) { decided = true; horiz = Math.abs(dx) > Math.abs(dy); }
+    if (horiz) {
+      e.preventDefault();
+      card.style.transition = 'none';
+      card.style.transform = `translateX(${dx}px)`;
+      card.classList.toggle('swipe-complete', dx > 60);
+      card.classList.toggle('swipe-snooze', dx < -60);
+    }
+  });
+  const end = async () => {
+    if (!dragging) return; dragging = false;
+    card.style.transition = ''; card.style.transform = '';
+    card.classList.remove('swipe-complete', 'swipe-snooze');
+    if (horiz && dx > 90) { card.querySelector('.check')?.classList.add('done'); await toggleTask(task.id); }
+    else if (horiz && dx < -90) { await snoozeTask(task); }
+  };
+  card.addEventListener('pointerup', end);
+  card.addEventListener('pointercancel', () => { dragging = false; card.style.transition = ''; card.style.transform = ''; card.classList.remove('swipe-complete', 'swipe-snooze'); });
+  card.addEventListener('click', (e) => { if (horiz && Math.abs(dx) > 10) { e.stopPropagation(); e.preventDefault(); } }, true);
+}
+
+async function snoozeTask(task, when = 'tomorrow') {
+  const d = new Date();
+  if (when === 'tomorrow') d.setDate(d.getDate() + 1);
+  else if (when === 'weekend') { const add = (6 - d.getDay() + 7) % 7 || 6; d.setDate(d.getDate() + add); }
+  else if (when === 'nextweek') d.setDate(d.getDate() + 7);
+  await api('PATCH', '/tasks/' + task.id, { due_at: ymd(d), has_time: 0 });
+  toast(when === 'tomorrow' ? 'Moved to tomorrow →' : 'Rescheduled →');
+  refreshMeta().then(render);
 }
 
 function renderSubs(task) {
@@ -176,6 +219,7 @@ async function render() {
   try {
     if (state.sub?.type === 'list') return renderListDetail(state.sub.id);
     if (state.sub?.type === 'goal') return renderGoalDetail(state.sub.id);
+    if (state.sub?.type === 'inbox') return renderInbox();
     if (state.tab === 'today') return renderToday();
     if (state.tab === 'calendar') return renderCalendar();
     if (state.tab === 'goals') return renderGoals();
@@ -202,7 +246,26 @@ async function renderToday() {
     <div><b>${done} of ${total || 0} done today</b>
     <div class="sub">${total === 0 ? 'A clear page. Add something small.' : (tasks.length ? `about <span class="accent">${mins ? Math.round(mins / 60 * 10) / 10 + 'h' : 'a bit'}</span> of tasks left` : 'All done. Lovely. 🎉')}</div></div></div>`));
 
-  const overdue = tasks.filter((t) => dueState(t) === 'overdue');
+  // Signature actions: plan the day, or let Tempo choose one to beat choice paralysis.
+  const actions = el(`<div class="today-actions">
+    <button class="pill-action" data-plan>🗂 Plan my day</button>
+    ${tasks.length ? '<button class="pill-action accent" data-pick>✨ Pick one for me</button>' : ''}
+  </div>`);
+  v.appendChild(actions);
+
+  if (tasks.length > 1) {
+    const f = state.todayFilter;
+    v.appendChild(el(`<div class="filters">
+      <button class="chip-btn ${f === 'all' ? 'on' : ''}" data-filter="all">All</button>
+      <button class="chip-btn ${f === 'quick' ? 'on' : ''}" data-filter="quick">⏱ Quick (≤15m)</button>
+      <button class="chip-btn ${f === 'low' ? 'on' : ''}" data-filter="low">⚡ Low energy</button>
+    </div>`));
+  }
+  const passFilter = (t) => state.todayFilter === 'all'
+    || (state.todayFilter === 'quick' && t.estimate_min && t.estimate_min <= 15)
+    || (state.todayFilter === 'low' && t.energy === 'low');
+
+  const overdue = tasks.filter((t) => dueState(t) === 'overdue' && passFilter(t));
   if (overdue.length) {
     const roll = el(`<div class="section-label" style="display:flex;justify-content:space-between;align-items:center">
       <span>Carried over (${overdue.length})</span>
@@ -214,9 +277,12 @@ async function renderToday() {
     overdue.forEach((t) => v.appendChild(taskCard(t)));
   }
 
-  const rest = tasks.filter((t) => dueState(t) !== 'overdue');
+  const rest = tasks.filter((t) => dueState(t) !== 'overdue' && passFilter(t));
   v.appendChild(el(`<div class="section-label">Today</div>`));
-  if (!rest.length && !overdue.length) v.appendChild(el(`<div class="empty"><span class="big">🌿</span>Nothing scheduled for today.<br>Tap ＋ to capture something.</div>`));
+  if (!rest.length && !overdue.length) {
+    const msg = state.todayFilter !== 'all' ? 'Nothing matches that filter right now.' : 'Nothing scheduled for today.<br>Tap ＋ to capture something.';
+    v.appendChild(el(`<div class="empty"><span class="big">🌿</span>${msg}</div>`));
+  }
   rest.forEach((t) => v.appendChild(taskCard(t)));
 
   if (doneToday.length) {
@@ -244,8 +310,12 @@ async function renderGoals() {
 
 async function renderLists() {
   $('#title').textContent = 'Lists';
-  const lists = state.lists = await api('GET', '/lists');
+  const [lists, inbox] = await Promise.all([api('GET', '/lists'), api('GET', '/tasks?bucket=inbox')]);
+  state.lists = lists;
   const v = $('#view'); v.innerHTML = '';
+  v.appendChild(el(`<div class="list-row" data-searchopen style="color:var(--ink-soft)"><span class="list-emoji">🔍</span><span class="list-name">Search</span></div>`));
+  v.appendChild(el(`<div class="list-row" data-inboxopen><span class="list-emoji">📥</span><span class="list-name">Inbox</span><span class="list-count">${inbox.length}</span></div>`));
+  v.appendChild(el(`<div class="section-label">Your lists</div>`));
   for (const l of lists) {
     v.appendChild(el(`<div class="list-row" data-listopen="${l.id}">
       <span class="list-emoji">${esc(l.emoji || '•')}</span>
@@ -268,6 +338,16 @@ async function renderListDetail(id) {
   if (done.length) { v.appendChild(el(`<div class="section-label">Done</div>`)); done.forEach((t) => v.appendChild(taskCard(t))); }
   v.appendChild(el(`<div style="margin-top:22px;text-align:center"><button class="btn-ghost" id="edit-list">Edit list</button></div>`));
   $('#edit-list').addEventListener('click', () => openListEditor(l));
+}
+
+async function renderInbox() {
+  $('#title').textContent = '📥 Inbox';
+  const tasks = await api('GET', '/tasks?bucket=inbox');
+  const v = $('#view'); v.innerHTML = '';
+  if (!tasks.length) { v.appendChild(el(`<div class="empty"><span class="big">📥</span>Inbox zero. Nicely done.</div>`)); return; }
+  v.appendChild(el(`<div class="greet">Undated captures. Give each a home — or plan them all at once.</div>`));
+  v.appendChild(el(`<div class="today-actions"><button class="pill-action" data-plan>🗂 Plan these now</button></div>`));
+  tasks.forEach((t) => v.appendChild(taskCard(t)));
 }
 
 async function renderGoalDetail(id) {
@@ -638,6 +718,125 @@ function openFocus(task, minutes) {
   overlay.querySelector('.fx-presets').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; close(); openFocus(task, Number(b.dataset.min)); });
 }
 
+// ---------------------------------------------------------------- pick one for me
+async function pickForMe() {
+  const pool = await api('GET', '/tasks?bucket=today&today=' + todayStr());
+  const open = pool.filter((t) => !t.done);
+  if (!open.length) { toast('Nothing to pick — add something first'); return; }
+  let filtered = open;
+  if (state.todayFilter === 'quick') filtered = open.filter((t) => t.estimate_min && t.estimate_min <= 15);
+  if (state.todayFilter === 'low') filtered = open.filter((t) => t.energy === 'low');
+  if (!filtered.length) filtered = open;
+  // Prefer the quickest — smallest barrier to just starting.
+  const sorted = [...filtered].sort((a, b) => (a.estimate_min || 999) - (b.estimate_min || 999));
+  let chosen = sorted[Math.floor(Math.random() * Math.min(3, sorted.length))];
+  const show = () => {
+    $('#sheet-body').innerHTML = `<h2>Try this one</h2>
+      <div class="pick-card">
+        <div class="pick-title">${esc(chosen.title)}</div>
+        <div class="task-meta" style="justify-content:center;margin-top:8px">
+          ${chosen.estimate_min ? `<span class="meta-chip">⏱ ${chosen.estimate_min}m</span>` : ''}
+          ${chosen.energy ? `<span class="meta-chip">${ENERGY[chosen.energy]}</span>` : ''}
+        </div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-primary" style="background:var(--now)" id="pk-start">▶ Just start · 2 min</button>
+      </div>
+      <div class="sheet-actions" style="margin-top:8px">
+        <button class="btn-ghost" id="pk-shuffle" style="flex:1">🔀 Something else</button>
+        <button class="btn-ghost" id="pk-done" style="flex:1">✓ Mark done</button>
+      </div>`;
+    $('#pk-start').addEventListener('click', () => { closeSheet(); openFocus(chosen, 2); });
+    $('#pk-shuffle').addEventListener('click', () => { chosen = sorted[Math.floor(Math.random() * sorted.length)]; show(); });
+    $('#pk-done').addEventListener('click', async () => { closeSheet(); await toggleTask(chosen.id); });
+  };
+  show();
+  openSheet();
+}
+
+// ---------------------------------------------------------------- plan my day
+async function openPlanDay() {
+  const [todayList, inbox] = await Promise.all([
+    api('GET', '/tasks?bucket=today&today=' + todayStr()),
+    api('GET', '/tasks?bucket=inbox'),
+  ]);
+  const seen = new Set(); const queue = [];
+  for (const t of [...todayList.filter((x) => dueState(x) === 'overdue'), ...inbox]) {
+    if (!seen.has(t.id)) { seen.add(t.id); queue.push(t); }
+  }
+  const overlay = $('#plan');
+  if (!queue.length) { toast('Nothing to plan — you\'re all set ✨'); return; }
+  let i = 0, planned = 0;
+  const decide = async (choice) => {
+    const t = queue[i];
+    const d = new Date();
+    if (choice === 'today') await api('PATCH', '/tasks/' + t.id, { due_at: todayStr(), has_time: 0 });
+    else if (choice === 'tomorrow') { d.setDate(d.getDate() + 1); await api('PATCH', '/tasks/' + t.id, { due_at: ymd(d), has_time: 0 }); }
+    else if (choice === 'later') { d.setDate(d.getDate() + 7); await api('PATCH', '/tasks/' + t.id, { due_at: ymd(d), has_time: 0 }); }
+    else if (choice === 'done') await api('POST', '/tasks/' + t.id + '/toggle');
+    if (choice !== 'skip') planned++;
+    i++; draw();
+  };
+  const draw = () => {
+    if (i >= queue.length) {
+      overlay.innerHTML = `<div class="fx-title">Day planned ✨</div>
+        <p class="muted" style="margin:14px 0 26px">${planned} sorted. Your Today is ready.</p>
+        <div class="fx-actions"><button class="fx-done" id="plan-close">See Today</button></div>`;
+      $('#plan-close').addEventListener('click', () => { overlay.classList.add('hidden'); refreshMeta().then(render); });
+      return;
+    }
+    const t = queue[i];
+    const list = listById(t.list_id);
+    const dots = queue.map((_, k) => `<i class="${k < i ? 'fill' : ''}"></i>`).join('');
+    overlay.innerHTML = `<button class="fx-close" id="plan-x" aria-label="Close">×</button>
+      <div class="plan-progress">${dots}</div>
+      <div class="plan-sub">${i + 1} of ${queue.length} · where does this go?</div>
+      <div class="plan-card">
+        <div class="plan-title">${esc(t.title)}</div>
+        <div class="task-meta" style="justify-content:center;margin-top:8px">
+          ${dueState(t) === 'overdue' ? '<span class="meta-chip overdue">🗓 ' + esc(dueLabel(t)) + '</span>' : '<span class="meta-chip">📥 Inbox</span>'}
+          ${list ? `<span class="meta-chip"><i class="list-dot" style="background:${esc(list.color)}"></i>${esc(list.name)}</span>` : ''}
+        </div>
+      </div>
+      <div class="plan-choices">
+        <button data-plan-c="today" class="pc-today">↑ Today</button>
+        <button data-plan-c="tomorrow">→ Tomorrow</button>
+        <button data-plan-c="later">⇥ Next week</button>
+        <button data-plan-c="done" class="pc-done">✓ Done</button>
+      </div>
+      <button class="plan-skip" data-plan-c="skip">Skip for now</button>`;
+    $('#plan-x').addEventListener('click', () => { overlay.classList.add('hidden'); refreshMeta().then(render); });
+    overlay.querySelectorAll('[data-plan-c]').forEach((b) => b.addEventListener('click', () => decide(b.dataset.planC)));
+  };
+  overlay.classList.remove('hidden');
+  draw();
+}
+
+// ---------------------------------------------------------------- search
+function openSearch() {
+  $('#sheet-body').innerHTML = `<h2>Search</h2>
+    <input class="capture-input" id="sq" placeholder="Find a task…" autocomplete="off" />
+    <div id="sq-results" style="margin-top:14px"></div>`;
+  openSheet();
+  const input = $('#sq'); setTimeout(() => input.focus(), 60);
+  let timer;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = input.value.trim();
+      const box = $('#sq-results');
+      if (!q) { box.innerHTML = ''; return; }
+      const results = await api('GET', '/tasks?q=' + encodeURIComponent(q));
+      box.innerHTML = results.length ? '' : '<p class="muted" style="text-align:center">No matches.</p>';
+      results.forEach((t) => {
+        const row = el(taskCard(t).outerHTML);
+        row.addEventListener('click', () => { closeSheet(); openTaskEditorById(t.id); });
+        box.appendChild(row);
+      });
+    }, 200);
+  });
+}
+
 // ---------------------------------------------------------------- task interactions
 async function toggleTask(id, celebrateIt) {
   const { task, spawned } = await api('POST', `/tasks/${id}/toggle`);
@@ -651,6 +850,8 @@ $('#view').addEventListener('click', async (e) => {
   const t = e.target;
   const goalOpen = t.closest('[data-goalopen]'); if (goalOpen) { state.sub = { type: 'goal', id: Number(goalOpen.dataset.goalopen) }; return render(); }
   const listOpen = t.closest('[data-listopen]'); if (listOpen) { state.sub = { type: 'list', id: Number(listOpen.dataset.listopen) }; return render(); }
+  if (t.closest('[data-inboxopen]')) { state.sub = { type: 'inbox' }; return render(); }
+  if (t.closest('[data-searchopen]')) return openSearch();
   const btn = t.closest('button'); if (!btn) { const ttl = t.closest('[data-edit]'); if (ttl) openTaskEditorById(Number(ttl.dataset.edit)); return; }
 
   if (btn.dataset.toggle) {
@@ -667,6 +868,9 @@ $('#view').addEventListener('click', async (e) => {
   else if (btn.dataset.day) { state.calSel = btn.dataset.day; render(); }
   else if (btn.dataset.shift) { const d = parseYmd(state.calSel); d.setDate(d.getDate() + Number(btn.dataset.shift)); state.calSel = ymd(d); render(); }
   else if (btn.dataset.ym) { state.calDate.setMonth(Number(btn.dataset.ym)); state.calMode = 'month'; state.calSel = ymd(new Date(state.calDate.getFullYear(), Number(btn.dataset.ym), 1)); render(); }
+  else if (btn.hasAttribute('data-plan')) openPlanDay();
+  else if (btn.hasAttribute('data-pick')) pickForMe();
+  else if (btn.dataset.filter) { state.todayFilter = btn.dataset.filter; render(); }
 });
 // add sub-task via inline input (Enter)
 $('#view').addEventListener('keydown', async (e) => {
@@ -690,12 +894,14 @@ $('#more-btn').addEventListener('click', () => {
   const body = $('#sheet-body');
   const notifOn = ('Notification' in window) && Notification.permission === 'granted';
   body.innerHTML = `<h2>Tempo</h2>
+    <div class="field"><button class="chip-btn" id="m-search" style="width:100%;padding:13px">🔍 Search tasks</button></div>
     <div class="field"><button class="chip-btn" id="m-notif" style="width:100%;padding:13px">${notifOn ? '🔔 Reminders on (while app is open)' : '🔔 Enable reminders'}</button></div>
     <div class="field"><button class="chip-btn" id="m-goal" style="width:100%;padding:13px">◈ New goal</button></div>
     <div class="field"><button class="chip-btn" id="m-export" style="width:100%;padding:13px">⬇ Export a backup (JSON)</button></div>
     <div class="field"><button class="chip-btn btn-danger" id="m-logout" style="width:100%;padding:13px">Log out</button></div>
     <p class="muted" style="font-size:12.5px">Reminders fire while Tempo is open in your browser. For lock-screen alerts, install to your home screen — native push is on the roadmap.</p>`;
   openSheet();
+  $('#m-search').addEventListener('click', openSearch);
   $('#m-notif').addEventListener('click', async () => { if ('Notification' in window) { await Notification.requestPermission(); toast(Notification.permission === 'granted' ? 'Reminders on' : 'Permission needed'); closeSheet(); } });
   $('#m-goal').addEventListener('click', () => openGoalEditor());
   $('#m-export').addEventListener('click', async () => {

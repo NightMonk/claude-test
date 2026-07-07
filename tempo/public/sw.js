@@ -1,6 +1,6 @@
 // Minimal service worker so the app is installable and the shell loads offline.
 // API calls always go to the network (your private data is never cached).
-const CACHE = 'tempo-shell-v1';
+const CACHE = 'tempo-shell-v2';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (e) => {

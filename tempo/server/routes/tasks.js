@@ -54,7 +54,17 @@ function advance(dueIso, repeat) {
 
 // GET /api/tasks?bucket=today|inbox|all|done_today  &list= &goal= &from= &to= &today=
 router.get('/', (req, res) => {
-  const { bucket, list, goal, from, to, today } = req.query;
+  const { bucket, list, goal, from, to, today, q } = req.query;
+
+  // Free-text search across titles and notes (top-level tasks).
+  if (q && q.trim()) {
+    const like = `%${q.trim()}%`;
+    const rows = db
+      .prepare('SELECT * FROM tasks WHERE parent_id IS NULL AND (title LIKE ? OR notes LIKE ?) ORDER BY done, due_at IS NULL, due_at LIMIT 60')
+      .all(like, like);
+    return res.json(rows.map(withSubtasks));
+  }
+
   const clauses = ['parent_id IS NULL'];
   const params = [];
 
