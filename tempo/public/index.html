@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#5b5bd6" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>Tempo</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Login -->
+  <div id="login" class="screen login hidden">
+    <div class="login-card">
+      <div class="brand"><span class="brand-mark">⏱</span> Tempo</div>
+      <p class="muted">A calmer way to get things done. Enter your passcode.</p>
+      <form id="login-form">
+        <input id="passcode" type="password" inputmode="numeric" placeholder="Passcode" autocomplete="current-password" />
+        <button type="submit">Unlock</button>
+      </form>
+      <p id="login-error" class="error hidden"></p>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <button id="back-btn" class="icon-btn hidden" aria-label="Back">‹</button>
+      <h1 id="title">Today</h1>
+      <button id="more-btn" class="icon-btn" aria-label="More">⋯</button>
+    </header>
+
+    <main id="view"><!-- rendered by app.js --></main>
+
+    <button id="fab" class="fab" aria-label="Add task">＋</button>
+
+    <nav class="tabbar">
+      <button class="tab active" data-view="today"><span class="ic">◎</span>Today</button>
+      <button class="tab" data-view="calendar"><span class="ic">▤</span>Calendar</button>
+      <button class="tab" data-view="goals"><span class="ic">◈</span>Goals</button>
+      <button class="tab" data-view="lists"><span class="ic">≡</span>Lists</button>
+    </nav>
+  </div>
+
+  <!-- Slide-up sheet for capture & forms -->
+  <div id="sheet" class="sheet-backdrop hidden">
+    <div class="sheet">
+      <div class="sheet-grab"></div>
+      <div id="sheet-body"></div>
+    </div>
+  </div>
+
+  <!-- Full-screen focus mode -->
+  <div id="focus" class="focus-overlay hidden"></div>
+
+  <div id="toast" class="toast hidden"></div>
+  <div id="confetti" class="confetti hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
