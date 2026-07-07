@@ -32,8 +32,11 @@ Legend: **[MVP]** first shippable · **[v1]** the complete first public release 
 
 ## The daily loop (anti‑overwhelm core)
 
-- **[MVP]** **"Today" view** — the home screen. Shows a *small* set: today's planned
-  tasks + anything due/scheduled today. Backlog is *not* shown here. *(P2, P3)*
+- **[MVP]** **"My Day" view** — the home screen (Any.do-inspired). Shows a *small*
+  set: tasks you've **added to My Day** today + anything due/overdue. Backlog is *not*
+  shown here. **My Day is a separate flag from the due date** (add a task to today's
+  focus without inventing a deadline; auto-clears daily). A week strip lets you jump
+  to any day's timeline. *(P2, P3)*
 - **[MVP]** **Plan‑my‑day ritual.** A guided, swipe‑through triage: for each
   candidate task, *Today / Tomorrow / Later / Done*. Fast, one‑handed. *(P2, P7)*
 - **[MVP]** **Soft daily capacity** with a gentle over‑commit warning. *(P2, P4)*

@@ -13,10 +13,16 @@ the design in [`../design/`](../design) — a self-hosted PWA that works on
 
 ## What it does
 
-- **Today** — a deliberately small, achievable home. A momentum ring, your few
-  tasks, a kind "carried over" roll-forward, and a "done today · your wins" list.
-- **Quick capture** — natural language: `Call dentist tomorrow 3pm !high #work`
-  parses the date, time, priority and list for you. Nothing required but the words.
+- **My Day** — the home screen (Any.do-style): a TickTick-style week strip, a calm
+  greeting, a momentum ring, your few tasks, a kind "carried over" roll-forward, and
+  a "done today · your wins" list. **"My Day" is separate from a task's due date** —
+  add anything to today's focus without inventing a fake deadline; it auto-clears
+  each day.
+- **"I want to…" quick capture** — natural language: `Call dentist tomorrow 3pm
+  !high #work` parses the date, time, priority and list. Nothing required but the words.
+- **Any.do-style task editor** — every element is a separated, tappable chip that
+  expands inline (Reminder, Repeat, List, Priority, Energy, Time, Goal, Add to My
+  Day), with a clear **Subtasks** block and **Notes**.
 - **Sub-tasks** — break any task into small steps (the ADHD "just start" trick).
 - **Focus mode** — one task, a big shrinking timer ring, and a **"Just start · 2
   min"** button on every task.

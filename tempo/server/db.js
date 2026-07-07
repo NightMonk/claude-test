@@ -52,6 +52,7 @@ db.exec(`
     repeat        TEXT NOT NULL DEFAULT 'none',  -- none|daily|weekly|monthly|annual
     done          INTEGER NOT NULL DEFAULT 0,
     completed_at  TEXT,
+    my_day_date   TEXT,                          -- date it was added to "My Day"; auto-expires
     sort          INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -115,6 +116,10 @@ db.exec(`
     sent_at      TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
+
+// Lightweight migration for databases created before My Day existed.
+const taskCols = db.prepare('PRAGMA table_info(tasks)').all().map((c) => c.name);
+if (!taskCols.includes('my_day_date')) db.exec('ALTER TABLE tasks ADD COLUMN my_day_date TEXT');
 
 // Ensure the single settings row exists, with a random feed token.
 if (!db.prepare('SELECT 1 FROM settings WHERE id = 1').get()) {

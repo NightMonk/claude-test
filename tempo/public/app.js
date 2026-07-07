@@ -131,9 +131,11 @@ function taskCard(task) {
   const list = listById(task.list_id);
   const subs = task.subtasks || [];
   const doneSubs = subs.filter((s) => s.done).length;
+  const inMyDay = task.my_day_date === todayStr();
   const meta = [];
   const dl = dueLabel(task);
   if (dl) meta.push(`<span class="meta-chip ${dueState(task)}">🗓 ${esc(dl)}</span>`);
+  if (inMyDay && !task.done) meta.push(`<span class="meta-chip myday-chip">◎ My Day</span>`);
   if (list) meta.push(`<span class="meta-chip"><i class="list-dot" style="background:${esc(list.color)}"></i>${esc(list.name)}</span>`);
   if (task.energy) meta.push(`<span class="meta-chip">${ENERGY[task.energy] || ''}</span>`);
   if (task.estimate_min) meta.push(`<span class="meta-chip">⏱ ${task.estimate_min < 60 ? task.estimate_min + 'm' : (task.estimate_min / 60) + 'h'}</span>`);
@@ -151,6 +153,7 @@ function taskCard(task) {
     ${!task.done ? `<div class="task-actions">
       <button class="mini-btn now" data-start="${task.id}">▶ Just start · 2 min</button>
       <button class="mini-btn" data-focus="${task.id}">Focus</button>
+      <button class="mini-btn" data-myday="${task.id}" data-on="${inMyDay ? '1' : '0'}">${inMyDay ? '◎ In My Day' : '◎ My Day'}</button>
     </div>` : ''}
   </div>`);
 
@@ -234,8 +237,24 @@ async function render() {
   } catch (e) { v.innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
 }
 
+// A TickTick-style horizontal week strip; tap another day to open its timeline.
+function weekStrip() {
+  const start = parseYmd(todayStr());
+  const ws = state.settings.week_start || 0;
+  start.setDate(start.getDate() - ((start.getDay() - ws + 7) % 7));
+  const strip = el('<div class="week-strip"></div>');
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const k = ymd(d); const isToday = k === todayStr();
+    const cell = el(`<button class="ws-day ${isToday ? 'today' : ''}" data-daynav="${k}">
+      <span class="ws-dow">${DOW[d.getDay()][0]}</span><span class="ws-num">${d.getDate()}</span></button>`);
+    strip.appendChild(cell);
+  }
+  return strip;
+}
+
 async function renderToday() {
-  $('#title').textContent = 'Today';
+  $('#title').textContent = 'My Day';
   const [tasks, doneToday] = await Promise.all([
     api('GET', '/tasks?bucket=today&today=' + todayStr()),
     api('GET', '/tasks?bucket=done_today&today=' + todayStr()),
@@ -245,6 +264,8 @@ async function renderToday() {
   const done = doneToday.length;
   const pct = total ? done / total : 0;
   const mins = tasks.reduce((a, t) => a + (t.estimate_min || 0), 0);
+
+  v.appendChild(weekStrip());
 
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -287,7 +308,7 @@ async function renderToday() {
   const rest = tasks.filter((t) => dueState(t) !== 'overdue' && passFilter(t));
   v.appendChild(el(`<div class="section-label">Today</div>`));
   if (!rest.length && !overdue.length) {
-    const msg = state.todayFilter !== 'all' ? 'Nothing matches that filter right now.' : 'Nothing scheduled for today.<br>Tap ＋ to capture something.';
+    const msg = state.todayFilter !== 'all' ? 'Nothing matches that filter right now.' : 'You have a free day.<br><span class="muted">Take it easy — or tap ＋ to add something.</span>';
     v.appendChild(el(`<div class="empty"><span class="big">🌿</span>${msg}</div>`));
   }
   rest.forEach((t) => v.appendChild(taskCard(t)));
@@ -543,7 +564,7 @@ async function openReview() {
   if (!withNext.length) gbox.appendChild(el(`<p class="muted" style="font-size:13px">No goals with a next step yet.</p>`));
   withNext.forEach((g) => {
     const row = el(`<div class="rv-goal"><div><b>${esc(g.name)}</b><br><small class="muted">${esc(g.next_action.title)}</small></div><button class="chip-btn" data-pull="${g.next_action.id}">Today</button></div>`);
-    row.querySelector('[data-pull]').addEventListener('click', async (e) => { await api('PATCH', '/tasks/' + e.target.dataset.pull, { due_at: todayStr(), has_time: 0 }); e.target.textContent = '✓'; e.target.classList.add('on'); });
+    row.querySelector('[data-pull]').addEventListener('click', async (e) => { await api('PATCH', '/tasks/' + e.target.dataset.pull, { my_day_date: todayStr() }); e.target.textContent = '✓'; e.target.classList.add('on'); });
     gbox.appendChild(row);
   });
   $('#rv-x').addEventListener('click', () => overlay.classList.add('hidden'));
@@ -757,37 +778,38 @@ function parseQuick(text) {
 
 function openCapture() {
   const body = $('#sheet-body');
-  body.innerHTML = `<h2>Quick add</h2>
+  body.innerHTML = `<h2 class="cap-h">I want to…</h2>
     <input class="capture-input" id="cap" placeholder="e.g. Call dentist tomorrow 3pm !high" autocomplete="off" />
-    <div class="parse-hint" id="cap-hint">Type naturally — I'll pick out the date, list &amp; priority.</div>
+    <div class="parse-hint" id="cap-hint">Just type — I'll pick out the date, list &amp; priority.</div>
     <div class="chips" id="cap-quick">
-      <button class="chip-btn" data-q="today">Today</button>
-      <button class="chip-btn" data-q="tomorrow">Tomorrow</button>
+      <button class="chip-btn" data-q="myday">◎ My Day</button>
+      <button class="chip-btn" data-q="tomorrow">→ Tomorrow</button>
       ${state.lists.map((l) => `<button class="chip-btn" data-ql="${l.id}">${esc(l.emoji || '')} ${esc(l.name)}</button>`).join('')}
     </div>
-    <div class="sheet-actions"><button class="btn-primary" id="cap-add">Add task</button></div>`;
+    <div class="sheet-actions"><button class="btn-primary" id="cap-add">Add</button></div>`;
   openSheet();
   const input = $('#cap'); const hint = $('#cap-hint');
-  let forceList = null, forceDue = null;
+  let forceList = null, forceDue = null, myDay = false;
   setTimeout(() => input.focus(), 60);
   const preview = () => {
     const p = parseQuick(input.value);
     const bits = [];
+    if (myDay) bits.push('◎ My Day');
     const due = forceDue || p.due_at;
     if (due) bits.push('🗓 ' + esc(dueLabel({ due_at: due, has_time: p.has_time })));
     if (p.priority) bits.push('❗ ' + (p.priority === 2 ? 'high' : 'med'));
     const li = forceList || p.list_id; if (li) bits.push('#' + esc(listById(li)?.name || ''));
     if (p.repeat !== 'none') bits.push('🔁 ' + p.repeat);
     if (p.estimate_min) bits.push('⏱ ' + p.estimate_min + 'm');
-    hint.innerHTML = bits.length ? bits.map((b) => `<b>${b}</b>`).join(' &nbsp; ') : 'Type naturally — I\'ll pick out the date, list &amp; priority.';
+    hint.innerHTML = bits.length ? bits.map((b) => `<b>${b}</b>`).join(' &nbsp; ') : 'Just type — I\'ll pick out the date, list &amp; priority.';
   };
   input.addEventListener('input', preview);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
   $('#cap-quick').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
-    document.querySelectorAll('#cap-quick .chip-btn').forEach((x) => { if (x.dataset.ql || x.dataset.q === b.dataset.q) {} });
-    if (b.dataset.q) { forceDue = b.dataset.q === 'today' ? todayStr() : ymd(new Date(Date.now() + 86400000)); document.querySelectorAll('[data-q]').forEach((x) => x.classList.toggle('on', x === b)); }
-    if (b.dataset.ql) { forceList = Number(b.dataset.ql); document.querySelectorAll('[data-ql]').forEach((x) => x.classList.toggle('on', x === b)); }
+    if (b.dataset.q === 'myday') { myDay = !myDay; b.classList.toggle('on', myDay); }
+    else if (b.dataset.q) { forceDue = forceDue === ymd(new Date(Date.now() + 86400000)) ? null : ymd(new Date(Date.now() + 86400000)); document.querySelectorAll('[data-q="tomorrow"]').forEach((x) => x.classList.toggle('on', forceDue)); }
+    if (b.dataset.ql) { forceList = forceList === Number(b.dataset.ql) ? null : Number(b.dataset.ql); document.querySelectorAll('[data-ql]').forEach((x) => x.classList.toggle('on', Number(x.dataset.ql) === forceList)); }
     preview();
   });
   async function submit() {
@@ -795,6 +817,7 @@ function openCapture() {
     if (!p.title) { toast('Give it a title'); return; }
     if (forceList) p.list_id = forceList;
     if (forceDue && !p.due_at) { p.due_at = forceDue; p.has_time = 0; }
+    if (myDay) p.my_day_date = todayStr();
     await api('POST', '/tasks', p);
     closeSheet(); toast('Added ✓'); refreshMeta().then(render);
   }
@@ -802,92 +825,144 @@ function openCapture() {
 }
 
 // ---------------------------------------------------------------- task editor
+// Any.do-inspired: every element is a separated chip that expands inline.
+const REPEAT_LABEL = { none: 'Repeat', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', annual: 'Yearly' };
 function openTaskEditor(task, defaults = {}) {
-  const t = task || { priority: 0, repeat: 'none', list_id: defaults.list_id ?? null, goal_id: defaults.goal_id ?? null, subtasks: [] };
-  let subs = (t.subtasks || []).map((s) => ({ id: s.id, title: s.title, done: s.done }));
-  const date = t.due_at ? t.due_at.slice(0, 10) : '';
-  const time = t.due_at && t.has_time ? t.due_at.split('T')[1] : '';
+  const draft = task
+    ? { ...task }
+    : { title: '', notes: '', priority: 0, repeat: 'none', energy: null, estimate_min: null,
+        list_id: defaults.list_id ?? null, goal_id: defaults.goal_id ?? null, due_at: null, has_time: 0, my_day_date: null };
+  let subs = (task?.subtasks || []).map((s) => ({ id: s.id, title: s.title, done: s.done }));
+  let open = null; // currently expanded chip key
   const body = $('#sheet-body');
-  body.innerHTML = `<h2>${task ? 'Edit task' : 'New task'}</h2>
-    <div class="field"><label>Title</label><input type="text" id="f-title" value="${esc(t.title || '')}" placeholder="What needs doing?" /></div>
-    <div class="field"><label>Notes</label><textarea id="f-notes" placeholder="Any detail…">${esc(t.notes || '')}</textarea></div>
-    <div class="row2">
-      <div class="field"><label>Date</label><input type="date" id="f-date" value="${date}" /></div>
-      <div class="field"><label>Time (optional)</label><input type="time" id="f-time" value="${time}" /></div>
+  const list = () => listById(draft.list_id);
+  const goal = () => state.goals.find((g) => g.id == draft.goal_id);
+
+  body.innerHTML = `
+    <div class="te-head">
+      <span class="te-crumb">🔒 ${list() ? esc((list().emoji || '') + ' ' + list().name) : 'No list'}</span>
+      <button class="te-save" id="te-save">${task ? 'Save' : 'Add'}</button>
     </div>
-    <div class="field"><label>Priority</label><div class="chips" id="f-prio">
-      ${[['None', 0], ['Medium', 1], ['High', 2]].map(([n, v]) => `<button class="chip-btn ${t.priority == v ? 'on' + (v == 2 ? ' now-chip' : '') : ''}" data-prio="${v}">${n}</button>`).join('')}</div></div>
-    <div class="field"><label>Energy needed</label><div class="chips" id="f-energy">
-      ${[['—', ''], ['⚡ Low', 'low'], ['🔋 Medium', 'med'], ['🔥 High', 'high']].map(([n, v]) => `<button class="chip-btn ${(t.energy || '') === v ? 'on' : ''}" data-energy="${v}">${n}</button>`).join('')}</div></div>
-    <div class="field"><label>Rough time</label><div class="chips" id="f-est">
-      ${[['—', ''], ['5m', 5], ['15m', 15], ['30m', 30], ['1h', 60], ['2h', 120]].map(([n, v]) => `<button class="chip-btn ${(t.estimate_min || '') == v ? 'on' : ''}" data-est="${v}">${n}</button>`).join('')}</div></div>
-    <div class="row2">
-      <div class="field"><label>List</label><select id="f-list"><option value="">— None —</option>
-        ${state.lists.map((l) => `<option value="${l.id}" ${t.list_id == l.id ? 'selected' : ''}>${esc(l.emoji || '')} ${esc(l.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>Repeat</label><select id="f-repeat">
-        ${['none', 'daily', 'weekly', 'monthly', 'annual'].map((r) => `<option value="${r}" ${t.repeat === r ? 'selected' : ''}>${r === 'none' ? 'Never' : r[0].toUpperCase() + r.slice(1)}</option>`).join('')}</select></div>
-    </div>
-    <div class="field"><label>Goal</label><select id="f-goal"><option value="">— None —</option>
-      ${state.goals.map((g) => `<option value="${g.id}" ${t.goal_id == g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
-    <div class="field"><label>Sub-tasks (break it down)</label><div class="sub-editor" id="f-subs"></div></div>
-    <div class="sheet-actions">
-      <button class="btn-primary" id="f-save">${task ? 'Save' : 'Add task'}</button>
-      ${task ? '<button class="btn-ghost btn-danger" id="f-del">Delete</button>' : ''}
-    </div>`;
+    <input class="te-title" id="te-title" value="${esc(draft.title || '')}" placeholder="What needs doing?" />
+    <div class="te-chips" id="te-chips"></div>
+    <div class="te-expand" id="te-expand"></div>
+    <div class="te-section">SUBTASKS <span id="te-subcount"></span></div>
+    <div class="sub-editor" id="te-subs"></div>
+    <div class="te-section">NOTES</div>
+    <textarea class="te-notes" id="te-notes" placeholder="Add your notes…">${esc(draft.notes || '')}</textarea>
+    ${task ? '<button class="te-delete" id="te-del">Delete task</button>' : ''}`;
   openSheet();
 
-  // chip groups (single-select)
-  body.querySelectorAll('#f-prio, #f-energy, #f-est').forEach((grp) => grp.addEventListener('click', (e) => {
-    const b = e.target.closest('.chip-btn'); if (!b) return;
-    grp.querySelectorAll('.chip-btn').forEach((x) => x.classList.toggle('on', x === b));
-    if (grp.id === 'f-prio') b.classList.toggle('now-chip', b.dataset.prio === '2');
-  }));
+  const humanDue = () => draft.due_at ? dueLabel({ due_at: draft.due_at, has_time: draft.has_time }) : null;
+  const chipDefs = () => [
+    ...(task ? [{ key: 'complete', label: (draft.done ? '↩︎ Mark not done' : '✓ Mark complete'), on: !!draft.done }] : []),
+    { key: 'myday', label: draft.my_day_date === todayStr() ? '◎ In My Day' : '◎ Add to My Day', on: draft.my_day_date === todayStr() },
+    { key: 'reminder', label: humanDue() ? '🕐 ' + humanDue() : '🕐 Reminder', on: !!draft.due_at },
+    { key: 'repeat', label: '🔁 ' + REPEAT_LABEL[draft.repeat], on: draft.repeat !== 'none' },
+    { key: 'list', label: list() ? (list().emoji || '📁') + ' ' + list().name : '📁 List', on: !!draft.list_id },
+    { key: 'priority', label: draft.priority ? '❗ ' + (draft.priority === 2 ? 'High' : 'Medium') : '➖ Priority', on: !!draft.priority },
+    { key: 'energy', label: draft.energy ? ENERGY[draft.energy] : '⚡ Energy', on: !!draft.energy },
+    { key: 'time', label: draft.estimate_min ? '⏱ ' + (draft.estimate_min < 60 ? draft.estimate_min + 'm' : draft.estimate_min / 60 + 'h') : '⏱ Time', on: !!draft.estimate_min },
+    { key: 'goal', label: goal() ? '◈ ' + goal().name : '◈ Goal', on: !!draft.goal_id },
+  ];
 
-  const subBox = $('#f-subs');
+  function paintChips() {
+    $('#te-chips').innerHTML = chipDefs().map((c) => `<button class="te-chip ${c.on ? 'on' : ''} ${open === c.key ? 'active' : ''}" data-chip="${c.key}">${esc(c.label)}</button>`).join('');
+  }
+
+  const optRow = (opts, current, attr) => opts.map(([n, val]) =>
+    `<button class="chip-btn ${String(current) === String(val) ? 'on' : ''}" data-${attr}="${val}">${esc(n)}</button>`).join('');
+
+  function paintExpand() {
+    const box = $('#te-expand');
+    if (!open) { box.innerHTML = ''; box.classList.remove('shown'); return; }
+    box.classList.add('shown');
+    if (open === 'reminder') {
+      const d = draft.due_at ? draft.due_at.slice(0, 10) : '';
+      const tm = draft.due_at && draft.has_time ? draft.due_at.split('T')[1] : '';
+      box.innerHTML = `<div class="ex-label">Date & reminder time</div>
+        <div class="row2"><input type="date" id="ex-date" value="${d}"><input type="time" id="ex-time" value="${tm}"></div>
+        <div class="chips" style="margin-top:8px">
+          <button class="chip-btn" data-quick="today">Today</button>
+          <button class="chip-btn" data-quick="tomorrow">Tomorrow</button>
+          ${draft.due_at ? '<button class="chip-btn" data-quick="clear">Clear</button>' : ''}</div>`;
+      const apply = () => { const dd = $('#ex-date').value, tt = $('#ex-time').value; draft.due_at = dd ? (tt ? `${dd}T${tt}` : dd) : null; draft.has_time = dd && tt ? 1 : 0; paintChips(); };
+      $('#ex-date').addEventListener('change', apply); $('#ex-time').addEventListener('change', apply);
+      box.querySelectorAll('[data-quick]').forEach((b) => b.addEventListener('click', () => {
+        const q = b.dataset.quick;
+        if (q === 'clear') { draft.due_at = null; draft.has_time = 0; }
+        else draft.due_at = q === 'today' ? todayStr() : ymd(new Date(Date.now() + 86400000));
+        open = null; paintChips(); paintExpand();
+      }));
+    } else if (open === 'repeat') {
+      box.innerHTML = `<div class="ex-label">Repeat</div><div class="chips">${optRow([['Never', 'none'], ['Daily', 'daily'], ['Weekly', 'weekly'], ['Monthly', 'monthly'], ['Yearly', 'annual']], draft.repeat, 'rep')}</div>`;
+      box.querySelectorAll('[data-rep]').forEach((b) => b.addEventListener('click', () => { draft.repeat = b.dataset.rep; open = null; paintChips(); paintExpand(); }));
+    } else if (open === 'list') {
+      box.innerHTML = `<div class="ex-label">List</div><div class="chips">${optRow([['— None —', ''], ...state.lists.map((l) => [(l.emoji || '') + ' ' + l.name, l.id])], draft.list_id ?? '', 'lst')}</div>`;
+      box.querySelectorAll('[data-lst]').forEach((b) => b.addEventListener('click', () => { draft.list_id = b.dataset.lst ? Number(b.dataset.lst) : null; open = null; paintChips(); paintExpand(); }));
+    } else if (open === 'priority') {
+      box.innerHTML = `<div class="ex-label">Priority</div><div class="chips">${optRow([['None', 0], ['Medium', 1], ['High', 2]], draft.priority, 'pr')}</div>`;
+      box.querySelectorAll('[data-pr]').forEach((b) => b.addEventListener('click', () => { draft.priority = Number(b.dataset.pr); open = null; paintChips(); paintExpand(); }));
+    } else if (open === 'energy') {
+      box.innerHTML = `<div class="ex-label">Energy needed</div><div class="chips">${optRow([['— none —', ''], ['⚡ Low', 'low'], ['🔋 Medium', 'med'], ['🔥 High', 'high']], draft.energy ?? '', 'en')}</div>`;
+      box.querySelectorAll('[data-en]').forEach((b) => b.addEventListener('click', () => { draft.energy = b.dataset.en || null; open = null; paintChips(); paintExpand(); }));
+    } else if (open === 'time') {
+      box.innerHTML = `<div class="ex-label">Rough time</div><div class="chips">${optRow([['— none —', ''], ['5m', 5], ['15m', 15], ['30m', 30], ['1h', 60], ['2h', 120]], draft.estimate_min ?? '', 'es')}</div>`;
+      box.querySelectorAll('[data-es]').forEach((b) => b.addEventListener('click', () => { draft.estimate_min = b.dataset.es ? Number(b.dataset.es) : null; open = null; paintChips(); paintExpand(); }));
+    } else if (open === 'goal') {
+      box.innerHTML = `<div class="ex-label">Goal</div><div class="chips">${optRow([['— None —', ''], ...state.goals.map((g) => [g.name, g.id])], draft.goal_id ?? '', 'gl')}</div>`;
+      box.querySelectorAll('[data-gl]').forEach((b) => b.addEventListener('click', () => { draft.goal_id = b.dataset.gl ? Number(b.dataset.gl) : null; open = null; paintChips(); paintExpand(); }));
+    }
+  }
+
+  $('#te-chips').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-chip]'); if (!b) return;
+    const key = b.dataset.chip;
+    if (key === 'complete') { await api('POST', `/tasks/${task.id}/toggle`); closeSheet(); if (!draft.done) { celebrate(); toast(encourage()); } refreshMeta().then(render); return; }
+    if (key === 'myday') { draft.my_day_date = draft.my_day_date === todayStr() ? null : todayStr(); open = null; paintChips(); paintExpand(); toast(draft.my_day_date ? 'Added to My Day ◎' : 'Removed from My Day'); return; }
+    open = open === key ? null : key; paintChips(); paintExpand();
+  });
+
   function drawSubs() {
+    const subBox = $('#te-subs');
     subBox.innerHTML = '';
     subs.forEach((s, i) => {
-      const row = el(`<div class="se-row"><input value="${esc(s.title)}" placeholder="Step ${i + 1}" /><button class="se-del" aria-label="remove">×</button></div>`);
+      const row = el(`<div class="se-row"><span class="se-dot"></span><input value="${esc(s.title)}" placeholder="Subtask ${i + 1}" /><button class="se-del" aria-label="remove">×</button></div>`);
       row.querySelector('input').addEventListener('input', (e) => { s.title = e.target.value; });
       row.querySelector('.se-del').addEventListener('click', () => { subs.splice(i, 1); drawSubs(); });
       subBox.appendChild(row);
     });
-    const add = el(`<button class="chip-btn" style="align-self:flex-start">＋ Add step</button>`);
-    add.addEventListener('click', () => { subs.push({ title: '' }); drawSubs(); subBox.querySelectorAll('input')[subs.length - 1]?.focus(); });
+    const add = el(`<div class="se-row se-add"><span class="se-dot"></span><input placeholder="Add a subtask" id="te-newsub" /></div>`);
+    add.querySelector('input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.value.trim()) { subs.push({ title: e.target.value.trim() }); drawSubs(); $('#te-newsub')?.focus(); } });
     subBox.appendChild(add);
+    $('#te-subcount').textContent = subs.length ? `${subs.filter((s) => s.done).length}/${subs.length}` : '';
   }
-  drawSubs();
 
-  $('#f-save').addEventListener('click', async () => {
-    const title = $('#f-title').value.trim();
+  paintChips(); paintExpand(); drawSubs();
+
+  $('#te-save').addEventListener('click', async () => {
+    const title = $('#te-title').value.trim();
     if (!title) { toast('Give it a title'); return; }
-    const d = $('#f-date').value, tm = $('#f-time').value;
     const payload = {
-      title, notes: $('#f-notes').value.trim() || null,
-      due_at: d ? (tm ? `${d}T${tm}` : d) : null, has_time: d && tm ? 1 : 0,
-      priority: Number(body.querySelector('#f-prio .on')?.dataset.prio || 0),
-      energy: body.querySelector('#f-energy .on')?.dataset.energy || null,
-      estimate_min: Number(body.querySelector('#f-est .on')?.dataset.est || 0) || null,
-      list_id: $('#f-list').value ? Number($('#f-list').value) : null,
-      goal_id: $('#f-goal').value ? Number($('#f-goal').value) : null,
-      repeat: $('#f-repeat').value,
+      title, notes: $('#te-notes').value.trim() || null,
+      due_at: draft.due_at || null, has_time: draft.has_time ? 1 : 0,
+      priority: draft.priority || 0, energy: draft.energy || null, estimate_min: draft.estimate_min || null,
+      list_id: draft.list_id || null, goal_id: draft.goal_id || null, repeat: draft.repeat || 'none',
+      my_day_date: draft.my_day_date || null,
     };
     let id = task?.id;
     if (task) await api('PATCH', '/tasks/' + id, payload);
     else id = (await api('POST', '/tasks', payload)).id;
-    // reconcile sub-tasks
     const orig = task?.subtasks || [];
     for (const o of orig) if (!subs.find((s) => s.id === o.id)) await api('DELETE', '/tasks/' + o.id);
     for (const s of subs) {
-      const title2 = s.title.trim(); if (!title2) continue;
-      if (s.id) { const o = orig.find((x) => x.id === s.id); if (o && o.title !== title2) await api('PATCH', '/tasks/' + s.id, { title: title2 }); }
-      else await api('POST', '/tasks', { title: title2, parent_id: id });
+      const st = s.title.trim(); if (!st) continue;
+      if (s.id) { const o = orig.find((x) => x.id === s.id); if (o && o.title !== st) await api('PATCH', '/tasks/' + s.id, { title: st }); }
+      else await api('POST', '/tasks', { title: st, parent_id: id });
     }
     closeSheet(); toast(task ? 'Saved' : 'Added ✓'); refreshMeta().then(render);
   });
-  $('#f-del')?.addEventListener('click', async () => {
-    await api('DELETE', '/tasks/' + task.id); closeSheet(); toast('Deleted'); refreshMeta().then(render);
-  });
+  $('#te-del')?.addEventListener('click', async () => { await api('DELETE', '/tasks/' + task.id); closeSheet(); toast('Deleted'); refreshMeta().then(render); });
 }
 
 // ---------------------------------------------------------------- goal & list editors
@@ -1032,7 +1107,7 @@ async function openPlanDay() {
   const decide = async (choice) => {
     const t = queue[i];
     const d = new Date();
-    if (choice === 'today') await api('PATCH', '/tasks/' + t.id, { due_at: todayStr(), has_time: 0 });
+    if (choice === 'today') await api('PATCH', '/tasks/' + t.id, { my_day_date: todayStr() });
     else if (choice === 'tomorrow') { d.setDate(d.getDate() + 1); await api('PATCH', '/tasks/' + t.id, { due_at: ymd(d), has_time: 0 }); }
     else if (choice === 'later') { d.setDate(d.getDate() + 7); await api('PATCH', '/tasks/' + t.id, { due_at: ymd(d), has_time: 0 }); }
     else if (choice === 'done') await api('POST', '/tasks/' + t.id + '/toggle');
@@ -1133,6 +1208,8 @@ $('#view').addEventListener('click', async (e) => {
   else if (btn.hasAttribute('data-plan')) openPlanDay();
   else if (btn.hasAttribute('data-pick')) pickForMe();
   else if (btn.dataset.filter) { state.todayFilter = btn.dataset.filter; render(); }
+  else if (btn.dataset.daynav) { const k = btn.dataset.daynav; if (k === todayStr()) { render(); } else { state.tab = 'calendar'; state.calMode = 'day'; state.calSel = k; state.sub = null; render(); } }
+  else if (btn.dataset.myday) { const id = Number(btn.dataset.myday); await api('PATCH', '/tasks/' + id, { my_day_date: btn.dataset.on === '1' ? null : todayStr() }); toast(btn.dataset.on === '1' ? 'Removed from My Day' : 'Added to My Day ◎'); render(); }
 });
 // add sub-task via inline input (Enter)
 $('#view').addEventListener('keydown', async (e) => {

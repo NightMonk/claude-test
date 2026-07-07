@@ -7,7 +7,7 @@ const router = express.Router();
 
 const TASK_FIELDS = [
   'title', 'notes', 'list_id', 'goal_id', 'parent_id', 'due_at', 'has_time',
-  'priority', 'energy', 'estimate_min', 'repeat', 'sort',
+  'priority', 'energy', 'estimate_min', 'repeat', 'sort', 'my_day_date',
 ];
 
 // Pull only the writable fields from a body, coercing empties to null.
@@ -72,10 +72,13 @@ router.get('/', (req, res) => {
   if (goal) { clauses.push('goal_id = ?'); params.push(Number(goal)); }
 
   if (bucket === 'today') {
-    clauses.push('done = 0', 'due_at IS NOT NULL', "date(due_at) <= ?");
-    params.push(today || new Date().toISOString().slice(0, 10));
+    // "My Day": added to today, OR due today/overdue.
+    const t = today || new Date().toISOString().slice(0, 10);
+    clauses.push('done = 0', '((due_at IS NOT NULL AND date(due_at) <= ?) OR my_day_date = ?)');
+    params.push(t, t);
   } else if (bucket === 'inbox') {
-    clauses.push('done = 0', 'due_at IS NULL', 'goal_id IS NULL');
+    clauses.push('done = 0', 'due_at IS NULL', 'goal_id IS NULL', '(my_day_date IS NULL OR my_day_date != ?)');
+    params.push(today || new Date().toISOString().slice(0, 10));
   } else if (bucket === 'done_today') {
     clauses.push('done = 1', "date(completed_at,'localtime') = ?");
     params.push(today || new Date().toISOString().slice(0, 10));

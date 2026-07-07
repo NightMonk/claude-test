@@ -1,6 +1,6 @@
 // Service worker: installable offline shell + Web Push reminders.
 // API calls always go to the network (your private data is never cached).
-const CACHE = 'tempo-shell-v3';
+const CACHE = 'tempo-shell-v4';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (e) => {
