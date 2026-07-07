@@ -13,7 +13,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 let TOKEN = localStorage.getItem('tempo_token') || '';
-const state = { tab: 'today', lists: [], goals: [], sub: null, calMode: 'month', calDate: new Date(), calSel: todayStr(), todayFilter: 'all' };
+const state = { tab: 'today', lists: [], goals: [], sub: null, calMode: 'month', calDate: new Date(), calSel: todayStr(), todayFilter: 'all', settings: {} };
 const expanded = new Set();       // task ids showing their sub-tasks
 const notified = new Set();       // reminder ids already fired this session
 
@@ -53,10 +53,16 @@ $('#login-form').addEventListener('submit', async (e) => {
 async function boot() {
   showApp();
   await refreshMeta();
+  applyTheme();
   render();
 }
 async function refreshMeta() {
-  [state.lists, state.goals] = await Promise.all([api('GET', '/lists'), api('GET', '/goals')]);
+  [state.lists, state.goals, state.settings] = await Promise.all([api('GET', '/lists'), api('GET', '/goals'), api('GET', '/settings')]);
+}
+function applyTheme() {
+  const t = state.settings.theme || 'auto';
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
 }
 const listById = (id) => state.lists.find((l) => l.id === id);
 
@@ -220,6 +226,7 @@ async function render() {
     if (state.sub?.type === 'list') return renderListDetail(state.sub.id);
     if (state.sub?.type === 'goal') return renderGoalDetail(state.sub.id);
     if (state.sub?.type === 'inbox') return renderInbox();
+    if (state.sub?.type === 'settings') return renderSettings();
     if (state.tab === 'today') return renderToday();
     if (state.tab === 'calendar') return renderCalendar();
     if (state.tab === 'goals') return renderGoals();
@@ -295,6 +302,9 @@ async function renderGoals() {
   $('#title').textContent = 'Goals';
   const goals = state.goals = await api('GET', '/goals');
   const v = $('#view'); v.innerHTML = '';
+  v.appendChild(el(`<div class="today-actions"><button class="pill-action" id="goals-review">📋 Weekly review</button><button class="pill-action accent" id="goals-add">＋ New goal</button></div>`));
+  $('#goals-review').addEventListener('click', openReview);
+  $('#goals-add').addEventListener('click', () => openGoalEditor());
   if (!goals.length) { v.appendChild(el(`<div class="empty"><span class="big">◈</span>No goals yet.<br>Add one, then break it into small steps.</div>`)); return; }
   for (const g of goals) {
     const next = g.next_action;
@@ -374,6 +384,177 @@ async function renderGoalDetail(id) {
 }
 function dueLabelFromDate(s) { const d = parseYmd(s); return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`; }
 
+// ---------------------------------------------------------------- settings
+async function renderSettings() {
+  $('#title').textContent = 'Settings';
+  const s = state.settings = await api('GET', '/settings');
+  const cals = await api('GET', '/calendars');
+  const v = $('#view'); v.innerHTML = '';
+  const pushOn = ('Notification' in window) && Notification.permission === 'granted' && await hasPushSub();
+
+  v.appendChild(el(`<div class="section-label">Appearance</div>`));
+  const theme = el(`<div class="settings-card"><div class="set-row"><span>Theme</span><div class="chips" id="set-theme">
+    ${[['Auto', 'auto'], ['Light', 'light'], ['Dark', 'dark']].map(([n, val]) => `<button class="chip-btn ${(s.theme || 'auto') === val ? 'on' : ''}" data-theme-set="${val}">${n}</button>`).join('')}
+  </div></div>
+  <div class="set-row"><span>Week starts</span><div class="chips" id="set-week">
+    ${[['Sunday', 0], ['Monday', 1]].map(([n, val]) => `<button class="chip-btn ${(s.week_start || 0) == val ? 'on' : ''}" data-week="${val}">${n}</button>`).join('')}
+  </div></div></div>`);
+  v.appendChild(theme);
+
+  v.appendChild(el(`<div class="section-label">Reminders</div>`));
+  const notif = el(`<div class="settings-card">
+    <div class="set-row"><span>Push notifications<br><small class="muted">Fire even when Tempo is closed</small></span>
+      <button class="chip-btn ${pushOn ? 'on' : ''}" id="set-push">${pushOn ? 'On' : 'Enable'}</button></div>
+    <div class="set-row"><span>Quiet hours</span><div style="display:flex;gap:6px;align-items:center">
+      <input type="time" id="q-start" value="${s.quiet_start || ''}" style="width:104px"> <span class="muted">to</span>
+      <input type="time" id="q-end" value="${s.quiet_end || ''}" style="width:104px"></div></div>
+  </div>`);
+  v.appendChild(notif);
+
+  v.appendChild(el(`<div class="section-label">Calendar sync</div>`));
+  const calCard = el(`<div class="settings-card"><div id="cal-list"></div>
+    <button class="chip-btn" id="add-cal" style="width:100%;margin-top:8px">＋ Subscribe to a calendar (ICS)</button>
+    <div class="set-sub"><b>Publish your tasks</b><br><small class="muted">Add this URL in Google/Apple/Outlook to see Tempo tasks in your calendar:</small>
+      <div class="feed-url"><code id="feed">${esc(s.feed_url || '')}</code><button class="chip-btn" id="copy-feed">Copy</button></div></div>
+  </div>`);
+  v.appendChild(calCard);
+  const cl = $('#cal-list', calCard);
+  if (!cals.length) cl.appendChild(el(`<p class="muted" style="font-size:13px;margin:2px 0">No calendars yet.</p>`));
+  cals.forEach((c) => {
+    const row = el(`<div class="cal-item"><i class="list-dot" style="background:${esc(c.color)}"></i>
+      <div style="flex:1"><b>${esc(c.name)}</b>${c.last_error ? `<br><small style="color:var(--now)">${esc(c.last_error)}</small>` : c.last_synced ? `<br><small class="muted">synced</small>` : ''}</div>
+      <button class="chip-btn" data-calsync="${c.id}">↻</button><button class="se-del" data-caldel="${c.id}">×</button></div>`);
+    cl.appendChild(row);
+  });
+
+  v.appendChild(el(`<div class="section-label">Your data</div>`));
+  const data = el(`<div class="settings-card">
+    <button class="menu-item" id="s-export">⬇ <span>Export a backup (JSON)</span></button>
+    <button class="menu-item" id="s-import">⬆ <span>Restore from a backup</span></button>
+    <input type="file" id="import-file" accept="application/json" class="hidden">
+  </div>`);
+  v.appendChild(data);
+  v.appendChild(el(`<p class="muted" style="font-size:12px;text-align:center;margin-top:18px">Tempo · private, self-hosted. One login, every device.</p>`));
+
+  // wire
+  $('#set-theme').addEventListener('click', async (e) => { const b = e.target.closest('[data-theme-set]'); if (!b) return; await api('PATCH', '/settings', { theme: b.dataset.themeSet }); state.settings.theme = b.dataset.themeSet; applyTheme(); render(); });
+  $('#set-week').addEventListener('click', async (e) => { const b = e.target.closest('[data-week]'); if (!b) return; await api('PATCH', '/settings', { week_start: Number(b.dataset.week) }); state.settings.week_start = Number(b.dataset.week); render(); });
+  $('#set-push').addEventListener('click', enablePush);
+  const saveQuiet = async () => { await api('PATCH', '/settings', { quiet_start: $('#q-start').value, quiet_end: $('#q-end').value }); toast('Quiet hours saved'); };
+  $('#q-start').addEventListener('change', saveQuiet); $('#q-end').addEventListener('change', saveQuiet);
+  $('#add-cal').addEventListener('click', openCalendarAdd);
+  $('#copy-feed').addEventListener('click', () => { navigator.clipboard?.writeText(s.feed_url); toast('Feed URL copied'); });
+  cl.addEventListener('click', async (e) => {
+    const sync = e.target.closest('[data-calsync]'); const del = e.target.closest('[data-caldel]');
+    if (sync) { toast('Syncing…'); await api('POST', `/calendars/${sync.dataset.calsync}/sync`); render(); }
+    if (del) { await api('DELETE', '/calendars/' + del.dataset.caldel); render(); }
+  });
+  $('#s-export').addEventListener('click', async () => {
+    const d = await api('GET', '/export');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }));
+    a.download = 'tempo-backup.json'; a.click();
+  });
+  $('#s-import').addEventListener('click', () => $('#import-file').click());
+  $('#import-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    if (!confirm('Restore will replace all current tasks, lists and goals with the backup. Continue?')) return;
+    try { const data = JSON.parse(await file.text()); await api('POST', '/import', data); toast('Restored ✓'); refreshMeta().then(render); }
+    catch (err) { toast('Could not import that file'); }
+  });
+}
+
+function openCalendarAdd() {
+  const colors = ['#8b8fa8', '#5b5bd6', '#34c88a', '#ff7a59', '#e0a43b', '#d65db1'];
+  $('#sheet-body').innerHTML = `<h2>Subscribe to a calendar</h2>
+    <p class="muted" style="font-size:13px;margin-top:-6px">Paste the <b>secret ICS address</b> from Google Calendar (Settings → your calendar → “Secret address in iCal format”), Apple iCloud (share → Public Calendar), or Outlook (Publish calendar → ICS).</p>
+    <div class="field"><label>Name</label><input type="text" id="cal-name" placeholder="e.g. Work" /></div>
+    <div class="field"><label>ICS URL</label><input type="text" id="cal-url" placeholder="https://…/basic.ics or webcal://…" /></div>
+    <div class="field"><label>Colour</label><div class="chips" id="cal-color">${colors.map((c, i) => `<button class="chip-btn ${i === 1 ? 'on' : ''}" data-c="${c}" style="background:${c};color:#fff;border-color:${c}">●</button>`).join('')}</div></div>
+    <div class="sheet-actions"><button class="btn-primary" id="cal-save">Subscribe</button></div>`;
+  openSheet();
+  let color = '#5b5bd6';
+  $('#cal-color').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; color = b.dataset.c; $('#cal-color').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); });
+  $('#cal-save').addEventListener('click', async () => {
+    const url = $('#cal-url').value.trim(); if (!url) { toast('Paste the ICS URL'); return; }
+    try {
+      const r = await api('POST', '/calendars', { name: $('#cal-name').value.trim() || 'Calendar', url, color });
+      closeSheet();
+      toast(r.sync?.ok ? `Added — ${r.sync.count} events` : 'Added, but sync failed — check the URL');
+      render();
+    } catch (e) { toast(e.message); }
+  });
+}
+
+// ---------------------------------------------------------------- web push
+async function hasPushSub() {
+  try { const reg = await navigator.serviceWorker?.ready; return !!(await reg?.pushManager.getSubscription()); } catch { return false; }
+}
+function urlBase64ToUint8Array(base64) {
+  const padding = '='.repeat((4 - base64.length % 4) % 4);
+  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64); return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+async function enablePush() {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { toast('Push not supported here — try installing to your home screen'); return; }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { toast('Notifications permission needed'); return; }
+    const { key } = await api('GET', '/push/key');
+    if (!key) { toast('Push not configured on the server'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+    await api('POST', '/push/subscribe', sub.toJSON());
+    toast('Push reminders on ✓'); render();
+  } catch (e) { toast('Could not enable push: ' + e.message); }
+}
+
+// ---------------------------------------------------------------- weekly review
+async function openReview() {
+  const overlay = $('#review');
+  const from = new Date(); from.setDate(from.getDate() - 6);
+  const [doneWeek, todayList] = await Promise.all([
+    api('GET', `/tasks?from=${ymd(from)}&to=${todayStr()}`),
+    api('GET', '/tasks?bucket=today&today=' + todayStr()),
+  ]);
+  const goals = await api('GET', '/goals');
+  const done = doneWeek.filter((t) => t.done).length;
+  const openOverdue = todayList.filter((t) => dueState(t) === 'overdue');
+  const nextWeek = new Date(); nextWeek.setDate(nextWeek.getDate() + 7);
+  overlay.innerHTML = `<button class="fx-close" id="rv-x">×</button>
+    <div class="review-scroll">
+      <h2 style="margin-top:8px">Your week</h2>
+      <div class="review-stats">
+        <div class="rv-stat"><b>${done}</b><span>done this week</span></div>
+        <div class="rv-stat"><b>${openOverdue.length}</b><span>still open</span></div>
+        <div class="rv-stat"><b>${goals.length}</b><span>goals live</span></div>
+      </div>
+      <p class="muted" style="text-align:center">${done >= 5 ? 'Strong week 🎉' : done > 0 ? 'Every one counts.' : 'Fresh start — be kind to yourself.'}</p>
+      ${openOverdue.length ? `<div class="section-label">Carry ${openOverdue.length} unfinished forward</div>
+        <div class="review-choices"><button class="btn-ghost" id="rv-today">→ Pull into today</button><button class="btn-ghost" id="rv-next">⇥ Next week</button></div>` : ''}
+      <div class="section-label">Goals — pull a next step in?</div>
+      <div id="rv-goals"></div>
+      <div class="section-label">Intention for next week</div>
+      <textarea id="rv-note" class="review-note" placeholder="What's the one thing that matters?">${esc(state.settings.review_note || '')}</textarea>
+      <button class="btn-primary" id="rv-save" style="margin-top:14px">Save &amp; finish</button>
+    </div>`;
+  overlay.classList.remove('hidden');
+  const gbox = $('#rv-goals', overlay);
+  const withNext = goals.filter((g) => g.next_action);
+  if (!withNext.length) gbox.appendChild(el(`<p class="muted" style="font-size:13px">No goals with a next step yet.</p>`));
+  withNext.forEach((g) => {
+    const row = el(`<div class="rv-goal"><div><b>${esc(g.name)}</b><br><small class="muted">${esc(g.next_action.title)}</small></div><button class="chip-btn" data-pull="${g.next_action.id}">Today</button></div>`);
+    row.querySelector('[data-pull]').addEventListener('click', async (e) => { await api('PATCH', '/tasks/' + e.target.dataset.pull, { due_at: todayStr(), has_time: 0 }); e.target.textContent = '✓'; e.target.classList.add('on'); });
+    gbox.appendChild(row);
+  });
+  $('#rv-x').addEventListener('click', () => overlay.classList.add('hidden'));
+  $('#rv-today')?.addEventListener('click', async (e) => { await api('POST', '/tasks/rollover', { to: todayStr() }); e.target.textContent = 'Pulled in ✓'; });
+  $('#rv-next')?.addEventListener('click', async (e) => { for (const t of openOverdue) await api('PATCH', '/tasks/' + t.id, { due_at: ymd(nextWeek), has_time: 0 }); e.target.textContent = 'Moved ✓'; });
+  $('#rv-save').addEventListener('click', async () => {
+    await api('PATCH', '/settings', { review_note: $('#rv-note').value, review_at: new Date().toISOString() });
+    overlay.classList.add('hidden'); toast('Nice reflection. See you next week 🌱'); refreshMeta().then(render);
+  });
+}
+
 // ---------------------------------------------------------------- calendar
 async function renderCalendar() {
   $('#title').textContent = 'Calendar';
@@ -386,32 +567,37 @@ async function renderCalendar() {
   if (state.calMode === 'month') await calMonth(body);
   else if (state.calMode === 'year') await calYear(body);
   else if (state.calMode === 'week') await calRange(body, 7);
-  else await calRange(body, 1);
+  else await calTimeline(body);
 }
 
-function byDate(tasks) { const m = {}; for (const t of tasks) { const k = t.due_at.slice(0, 10); (m[k] = m[k] || []).push(t); } return m; }
+function byDate(items, key = 'due_at') { const m = {}; for (const t of items) { const k = (t[key] || '').slice(0, 10); if (!k) continue; (m[k] = m[k] || []).push(t); } return m; }
+async function getEvents(from, to) { try { return await api('GET', `/calendars/events?from=${from}&to=${to}`); } catch { return []; } }
+function eventChip(ev) {
+  const time = ev.all_day ? 'all day' : fmt12(ev.start.split('T')[1] || '');
+  return `<div class="cal-event" style="border-color:${esc(ev.color || 'var(--ink-faint)')}"><i style="background:${esc(ev.color || 'var(--ink-faint)')}"></i>${time ? `<b>${esc(time)}</b> ` : ''}${esc(ev.title)}</div>`;
+}
 
 async function calMonth(body) {
   const d = state.calDate; const y = d.getFullYear(), mo = d.getMonth();
   const first = new Date(y, mo, 1), start = new Date(first); start.setDate(1 - first.getDay());
   const end = new Date(start); end.setDate(start.getDate() + 41);
-  const tasks = await api('GET', `/tasks?from=${ymd(start)}&to=${ymd(end)}`);
-  const map = byDate(tasks);
+  const [tasks, events] = await Promise.all([api('GET', `/tasks?from=${ymd(start)}&to=${ymd(end)}`), getEvents(ymd(start), ymd(end))]);
+  const map = byDate(tasks); const emap = byDate(events, 'start');
   body.appendChild(el(`<div class="cal-head"><button class="navb" data-mo="-1">‹</button>
     <span class="cal-title">${MONTHS[mo]} ${y}</span><button class="navb" data-mo="1">›</button></div>`));
   const grid = el('<div class="month-grid"></div>');
   DOW.forEach((w) => grid.appendChild(el(`<div class="dow">${w[0]}</div>`)));
   for (let i = 0; i < 42; i++) {
     const cur = new Date(start); cur.setDate(start.getDate() + i);
-    const k = ymd(cur); const items = map[k] || [];
+    const k = ymd(cur); const items = map[k] || []; const evs = emap[k] || [];
     const undone = items.filter((t) => !t.done).length;
     const cls = [cur.getMonth() !== mo ? 'other' : '', k === todayStr() ? 'today' : '', k === state.calSel ? 'sel' : ''].join(' ');
-    const dots = items.length ? `<div class="day-dots">${items.slice(0, 3).map(() => `<i class="${undone ? '' : 'all-done'}"></i>`).join('')}</div>` : '';
+    const dots = (items.length || evs.length) ? `<div class="day-dots">${items.slice(0, 3).map(() => `<i class="${undone ? '' : 'all-done'}"></i>`).join('')}${evs.slice(0, 2).map((e) => `<i style="background:${esc(e.color || 'var(--ink-faint)')}"></i>`).join('')}</div>` : '';
     grid.appendChild(el(`<button class="day-cell ${cls}" data-day="${k}">${cur.getDate()}${dots}</button>`));
   }
   body.appendChild(grid);
   const sel = el('<div id="cal-sel"></div>'); body.appendChild(sel);
-  renderDayList(sel, map[state.calSel] || [], state.calSel);
+  renderDayList(sel, map[state.calSel] || [], state.calSel, false, emap[state.calSel] || []);
 }
 
 async function calYear(body) {
@@ -430,14 +616,13 @@ async function calYear(body) {
 
 async function calRange(body, days) {
   const base = parseYmd(state.calSel);
+  const weekStart = state.settings.week_start || 0;
   let start = new Date(base);
-  if (days === 7) start.setDate(base.getDate() - base.getDay()); // week starts Sunday
+  if (days === 7) start.setDate(base.getDate() - ((base.getDay() - weekStart + 7) % 7));
   const end = new Date(start); end.setDate(start.getDate() + days - 1);
-  const tasks = await api('GET', `/tasks?from=${ymd(start)}&to=${ymd(end)}`);
-  const map = byDate(tasks);
-  const title = days === 1
-    ? start.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
-    : `${start.getDate()} ${MONTHS[start.getMonth()].slice(0, 3)} – ${end.getDate()} ${MONTHS[end.getMonth()].slice(0, 3)}`;
+  const [tasks, events] = await Promise.all([api('GET', `/tasks?from=${ymd(start)}&to=${ymd(end)}`), getEvents(ymd(start), ymd(end))]);
+  const map = byDate(tasks); const emap = byDate(events, 'start');
+  const title = `${start.getDate()} ${MONTHS[start.getMonth()].slice(0, 3)} – ${end.getDate()} ${MONTHS[end.getMonth()].slice(0, 3)}`;
   body.appendChild(el(`<div class="cal-head"><button class="navb" data-shift="${-days}">‹</button>
     <span class="cal-title">${title}</span><button class="navb" data-shift="${days}">›</button></div>`));
   for (let i = 0; i < days; i++) {
@@ -445,15 +630,92 @@ async function calRange(body, days) {
     const k = ymd(cur);
     const wrap = el('<div></div>');
     wrap.appendChild(el(`<div class="day-heading"><span>${cur.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}${k === todayStr() ? ' · Today' : ''}</span></div>`));
-    renderDayList(wrap, map[k] || [], k, true);
+    renderDayList(wrap, map[k] || [], k, true, emap[k] || []);
     body.appendChild(wrap);
   }
 }
 
-function renderDayList(container, items, dayKey, inline) {
-  if (!inline) container.appendChild(el(`<div class="day-heading"><span>${parseYmd(dayKey).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span><span class="dh-count">${items.length || 'nothing'}</span></div>`));
-  if (!items.length) { if (inline) container.appendChild(el(`<div style="color:var(--ink-faint);font-size:13px;padding:2px 2px 10px">—</div>`)); return; }
+function renderDayList(container, items, dayKey, inline, events = []) {
+  if (!inline) container.appendChild(el(`<div class="day-heading"><span>${parseYmd(dayKey).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span><span class="dh-count">${(items.length + events.length) || 'nothing'}</span></div>`));
+  events.forEach((e) => container.appendChild(el(eventChip(e))));
+  if (!items.length && !events.length) { if (inline) container.appendChild(el(`<div style="color:var(--ink-faint);font-size:13px;padding:2px 2px 10px">—</div>`)); return; }
   items.forEach((t) => container.appendChild(taskCard(t)));
+}
+
+// ---- Day timeline: drag unscheduled tasks onto an hourly grid (time-blocking)
+const TL_START = 6, TL_END = 23, TL_HOURH = 54;
+async function calTimeline(body) {
+  const day = state.calSel;
+  const [tasks, events] = await Promise.all([api('GET', `/tasks?from=${day}&to=${day}`), getEvents(day, day)]);
+  const d = parseYmd(day);
+  body.appendChild(el(`<div class="cal-head"><button class="navb" data-shift="-1">‹</button>
+    <span class="cal-title">${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}${day === todayStr() ? ' · Today' : ''}</span>
+    <button class="navb" data-shift="1">›</button></div>`));
+
+  const untimed = tasks.filter((t) => !t.has_time && !t.done);
+  const tray = el(`<div class="tl-tray"><div class="tl-tray-label">Unscheduled — drag onto a time ↓</div><div class="tl-chips" id="tl-tray"></div></div>`);
+  if (!untimed.length) $('.tl-tray-label', tray).textContent = 'Everything today has a time. ✨';
+  untimed.forEach((t) => { const c = el(`<div class="tl-chip" data-tid="${t.id}">${esc(t.title)}${t.estimate_min ? ` · ${t.estimate_min}m` : ''}</div>`); $('#tl-tray', tray).appendChild(c); dragToSchedule(c, t); });
+  body.appendChild(tray);
+
+  const allDayEvents = events.filter((e) => e.all_day);
+  if (allDayEvents.length) { const s = el('<div class="tl-allday"></div>'); allDayEvents.forEach((e) => s.appendChild(el(eventChip(e)))); body.appendChild(s); }
+
+  const grid = el(`<div class="tl-grid" id="tl-grid"></div>`);
+  for (let h = TL_START; h <= TL_END; h++) {
+    grid.appendChild(el(`<div class="tl-hour" style="height:${TL_HOURH}px"><span class="tl-hlabel">${fmt12(pad(h) + ':00')}</span></div>`));
+  }
+  // now-line
+  if (day === todayStr()) {
+    const now = new Date(); const mins = now.getHours() * 60 + now.getMinutes();
+    if (now.getHours() >= TL_START && now.getHours() <= TL_END) grid.appendChild(el(`<div class="tl-now" style="top:${((mins - TL_START * 60) / 60) * TL_HOURH}px"></div>`));
+  }
+  const place = (top, height, cls, html, node) => { const b = node || el(`<div>${html}</div>`); b.className = cls; b.style.top = top + 'px'; b.style.height = Math.max(height, 26) + 'px'; grid.appendChild(b); return b; };
+  const topFor = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return ((h - TL_START) * 60 + m) / 60 * TL_HOURH; };
+
+  events.filter((e) => !e.all_day).forEach((e) => {
+    const t = e.start.split('T')[1]; if (!t) return;
+    const dur = e.end ? (new Date(e.end) - new Date(e.start)) / 60000 : 45;
+    place(topFor(t), dur / 60 * TL_HOURH, 'tl-block tl-event', `<b>${esc(fmt12(t))}</b> ${esc(e.title)}`).style.setProperty('--evc', e.color || 'var(--ink-faint)');
+  });
+  tasks.filter((t) => t.has_time && !t.done).forEach((t) => {
+    const time = t.due_at.split('T')[1];
+    const block = place(topFor(time), (t.estimate_min || 45) / 60 * TL_HOURH, 'tl-block tl-task', `<b>${esc(fmt12(time))}</b> ${esc(t.title)}`);
+    dragToSchedule(block, t);
+  });
+  body.appendChild(grid);
+}
+
+function dragToSchedule(elem, task) {
+  let sx = 0, sy = 0, moved = false, ghost = null, pid = null;
+  const move = (ev) => {
+    const dx = ev.clientX - sx, dy = ev.clientY - sy;
+    if (!moved && Math.hypot(dx, dy) > 6) { moved = true; ghost = elem.cloneNode(true); ghost.classList.add('tl-ghost'); ghost.style.width = elem.offsetWidth + 'px'; document.body.appendChild(ghost); elem.style.opacity = '.3'; }
+    if (moved && ghost) { ghost.style.left = ev.clientX + 'px'; ghost.style.top = ev.clientY + 'px'; }
+  };
+  const up = async (ev) => {
+    elem.removeEventListener('pointermove', move); elem.removeEventListener('pointerup', up);
+    try { elem.releasePointerCapture(pid); } catch {}
+    elem.style.opacity = ''; if (ghost) { ghost.remove(); ghost = null; }
+    const grid = document.getElementById('tl-grid');
+    if (moved && grid) {
+      const r = grid.getBoundingClientRect();
+      if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top - 6 && ev.clientY <= r.bottom + 6) {
+        const mins = Math.min(TL_END * 60 + 45, Math.max(TL_START * 60, Math.round(((ev.clientY - r.top) / TL_HOURH * 60 + TL_START * 60) / 15) * 15));
+        const h = Math.floor(mins / 60), m = mins % 60;
+        await api('PATCH', '/tasks/' + task.id, { due_at: `${state.calSel}T${pad(h)}:${pad(m)}`, has_time: 1 });
+        toast('Scheduled for ' + fmt12(`${pad(h)}:${pad(m)}`)); render();
+        return;
+      }
+    }
+    if (!moved) openTaskEditorById(task.id);
+  };
+  elem.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    sx = e.clientX; sy = e.clientY; moved = false; pid = e.pointerId;
+    try { elem.setPointerCapture(pid); } catch {}
+    elem.addEventListener('pointermove', move); elem.addEventListener('pointerup', up);
+  });
 }
 
 // ---------------------------------------------------------------- quick capture
@@ -892,24 +1154,19 @@ document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click',
 
 $('#more-btn').addEventListener('click', () => {
   const body = $('#sheet-body');
-  const notifOn = ('Notification' in window) && Notification.permission === 'granted';
-  body.innerHTML = `<h2>Tempo</h2>
-    <div class="field"><button class="chip-btn" id="m-search" style="width:100%;padding:13px">🔍 Search tasks</button></div>
-    <div class="field"><button class="chip-btn" id="m-notif" style="width:100%;padding:13px">${notifOn ? '🔔 Reminders on (while app is open)' : '🔔 Enable reminders'}</button></div>
-    <div class="field"><button class="chip-btn" id="m-goal" style="width:100%;padding:13px">◈ New goal</button></div>
-    <div class="field"><button class="chip-btn" id="m-export" style="width:100%;padding:13px">⬇ Export a backup (JSON)</button></div>
-    <div class="field"><button class="chip-btn btn-danger" id="m-logout" style="width:100%;padding:13px">Log out</button></div>
-    <p class="muted" style="font-size:12.5px">Reminders fire while Tempo is open in your browser. For lock-screen alerts, install to your home screen — native push is on the roadmap.</p>`;
+  body.innerHTML = `<h2>More</h2>
+    <div class="menu-list">
+      <button class="menu-item" id="m-search">🔍 <span>Search tasks</span></button>
+      <button class="menu-item" id="m-review">📋 <span>Weekly review</span></button>
+      <button class="menu-item" id="m-goal">◈ <span>New goal</span></button>
+      <button class="menu-item" id="m-settings">⚙️ <span>Settings</span></button>
+      <button class="menu-item" id="m-logout" style="color:var(--now)">⎋ <span>Log out</span></button>
+    </div>`;
   openSheet();
   $('#m-search').addEventListener('click', openSearch);
-  $('#m-notif').addEventListener('click', async () => { if ('Notification' in window) { await Notification.requestPermission(); toast(Notification.permission === 'granted' ? 'Reminders on' : 'Permission needed'); closeSheet(); } });
+  $('#m-review').addEventListener('click', () => { closeSheet(); openReview(); });
   $('#m-goal').addEventListener('click', () => openGoalEditor());
-  $('#m-export').addEventListener('click', async () => {
-    const data = await api('GET', '/export');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    a.download = 'tempo-backup.json'; a.click(); closeSheet();
-  });
+  $('#m-settings').addEventListener('click', () => { closeSheet(); state.sub = { type: 'settings' }; render(); });
   $('#m-logout').addEventListener('click', logout);
 });
 

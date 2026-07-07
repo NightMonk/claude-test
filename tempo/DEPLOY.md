@@ -64,11 +64,33 @@ docker run -p 3000:3000 \
   tempo
 ```
 
+## Push reminders (works when the app is closed)
+
+Tempo uses **Web Push (VAPID)**. On first run it auto-generates a keypair and
+stores it in the database, so **push works with no extra config** — just make sure
+you're on **HTTPS**. In the app: **⋯ → Settings → Enable push**. It fires on
+Windows/desktop Chrome & Edge, macOS Safari, and **iPhone once you Add to Home
+Screen** (iOS 16.4+). Set **quiet hours** in Settings to mute overnight.
+
+To pin stable keys across a fresh database, set `VAPID_PUBLIC` / `VAPID_PRIVATE`
+(generate with `npx web-push generate-vapid-keys`) and `VAPID_SUBJECT`.
+
+## Calendar sync
+
+- **See your events in Tempo:** Settings → *Subscribe to a calendar* → paste the
+  secret ICS URL (Google: “Secret address in iCal format”; Apple iCloud: Public
+  Calendar link; Outlook: Publish → ICS).
+- **See your Tempo tasks in your calendar:** Settings shows a *feed URL* — add it
+  as a subscribed calendar in Google/Apple/Outlook.
+
+## Native apps (iOS / Windows)
+
+The installed PWA already covers both platforms with push. For App Store / Store
+distribution, widgets and Live Activities, see [`native/`](native) — a Capacitor +
+WidgetKit scaffold you build on your own Mac/Windows toolchain.
+
 ## Notes
 
-- **Back up any time:** in the app, **⋯ → Export a backup (JSON)**.
-- **Reminders:** browser notifications fire while Tempo is open. True lock-screen
-  push (when the app is closed) needs the native wrappers described in the design
-  roadmap — a later step.
+- **Back up / restore:** **⋯ → Settings → Export / Restore (JSON)**.
 - **Security:** the passcode is a single shared secret, fine for a personal tool.
   Always serve over HTTPS and use a strong `SESSION_SECRET`.

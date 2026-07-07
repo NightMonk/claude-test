@@ -1,6 +1,6 @@
-// Minimal service worker so the app is installable and the shell loads offline.
+// Service worker: installable offline shell + Web Push reminders.
 // API calls always go to the network (your private data is never cached).
-const CACHE = 'tempo-shell-v2';
+const CACHE = 'tempo-shell-v3';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -15,7 +15,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith('/api') || url.origin !== self.location.origin) return; // never cache private data
+  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/feed') || url.origin !== self.location.origin) return;
   e.respondWith(
     caches.match(e.request).then((cached) => cached || fetch(e.request).then((res) => {
       const copy = res.clone();
@@ -23,4 +23,27 @@ self.addEventListener('fetch', (e) => {
       return res;
     }).catch(() => cached))
   );
+});
+
+// --- Web Push: reminders that fire even when the app is closed ---
+self.addEventListener('push', (e) => {
+  let data = { title: '⏱ Tempo', body: 'Reminder' };
+  try { data = e.data.json(); } catch { if (e.data) data.body = e.data.text(); }
+  e.waitUntil(self.registration.showNotification(data.title || '⏱ Tempo', {
+    body: data.body || '',
+    tag: data.tag,
+    icon: '/icon.svg',
+    badge: '/icon.svg',
+    data: { url: data.url || '/' },
+    requireInteraction: true, // ADHD-friendly: don't vanish before it's seen
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = e.notification.data?.url || '/';
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    for (const c of list) if ('focus' in c) return c.focus();
+    return clients.openWindow(url);
+  }));
 });

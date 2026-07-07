@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 const DB_PATH = process.env.DB_PATH || './data/tempo.sqlite';
 
@@ -60,7 +61,66 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
   CREATE INDEX IF NOT EXISTS idx_tasks_list ON tasks(list_id);
   CREATE INDEX IF NOT EXISTS idx_tasks_goal ON tasks(goal_id);
+
+  -- Single-row app settings / secrets (feed token + web-push VAPID keys).
+  CREATE TABLE IF NOT EXISTS settings (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    feed_token    TEXT,
+    vapid_public  TEXT,
+    vapid_private TEXT,
+    theme         TEXT NOT NULL DEFAULT 'auto',   -- auto | light | dark
+    week_start    INTEGER NOT NULL DEFAULT 0,      -- 0 Sun, 1 Mon
+    quiet_start   TEXT,                            -- "HH:MM" no reminders after
+    quiet_end     TEXT,
+    review_note   TEXT,
+    review_at     TEXT
+  );
+
+  -- Subscribed external calendars (read-only ICS feeds).
+  CREATE TABLE IF NOT EXISTS calendars (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    url          TEXT NOT NULL,
+    color        TEXT NOT NULL DEFAULT '#8b8fa8',
+    last_synced  TEXT,
+    last_error   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Cached raw VEVENTs from those feeds (expanded to instances at query time).
+  CREATE TABLE IF NOT EXISTS cal_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    calendar_id  INTEGER NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+    uid          TEXT,
+    title        TEXT,
+    start        TEXT,      -- ISO local "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM"
+    end          TEXT,
+    all_day      INTEGER NOT NULL DEFAULT 0,
+    rrule        TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_calevents_cal ON cal_events(calendar_id);
+
+  -- Web Push subscriptions (one per browser/device).
+  CREATE TABLE IF NOT EXISTS push_subs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint     TEXT UNIQUE NOT NULL,
+    p256dh       TEXT NOT NULL,
+    auth         TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Which task reminders have already been pushed (so we don't repeat).
+  CREATE TABLE IF NOT EXISTS reminders_sent (
+    task_id      INTEGER PRIMARY KEY,
+    sent_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+
+// Ensure the single settings row exists, with a random feed token.
+if (!db.prepare('SELECT 1 FROM settings WHERE id = 1').get()) {
+  const token = randomBytes(24).toString('hex');
+  db.prepare('INSERT INTO settings (id, feed_token) VALUES (1, ?)').run(token);
+}
 
 // Seed a friendly starter set the first time the app runs.
 const listCount = db.prepare('SELECT COUNT(*) AS n FROM lists').get().n;

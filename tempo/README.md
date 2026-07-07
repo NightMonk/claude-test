@@ -20,14 +20,26 @@ the design in [`../design/`](../design) — a self-hosted PWA that works on
 - **Sub-tasks** — break any task into small steps (the ADHD "just start" trick).
 - **Focus mode** — one task, a big shrinking timer ring, and a **"Just start · 2
   min"** button on every task.
-- **Calendar** — **Day / Week / Month / Year** views of everything by due date.
+- **Calendar** — **Day / Week / Month / Year** views. The **Day** view is a
+  time-blocking timeline: **drag unscheduled tasks onto an hour** to give them a time.
+- **Calendar sync** — subscribe to your Google/Apple/Outlook calendar (secret ICS
+  URL) to see events alongside tasks, and **publish your Tempo tasks back** as an
+  ICS feed your calendar app can subscribe to.
 - **Goals** — each shows live progress and the single **next action**, so a goal
   always reaches down to something concrete today.
+- **Weekly review** — a two-minute ritual: your week's wins, carry unfinished
+  forward, pull goal next-steps into next week, set an intention.
 - **Lists**, **priorities**, **energy tags**, **time estimates**, **recurring
   tasks** (daily/weekly/monthly/annual — completing one spawns the next).
-- **Reminders** — best-effort browser notifications while the app is open.
-- **Private** — passcode-gated, your own server, local SQLite. Export a full JSON
-  backup any time from **⋯ → Export**.
+- **Push reminders** — real **Web Push** that fires even when the app is closed
+  (iPhone 16.4+ installed to Home Screen, Windows/desktop Chrome & Edge, macOS),
+  with quiet hours.
+- **Settings** — theme (auto/light/dark), week start, quiet hours, calendar feeds,
+  and **JSON backup export _and restore_**.
+- **Private** — passcode-gated, your own server, local SQLite. One login, every
+  device.
+- **Native wrappers** — an iOS/Windows scaffold (Capacitor + WidgetKit) lives in
+  [`native/`](native) for App Store distribution, widgets and Live Activities.
 
 ## Run it
 
@@ -56,17 +68,21 @@ database — one instance *is* your private cloud. Then "Add to Home Screen".
 
 ```
 server/            Node + Express API
-  index.js         entry, auth gate, static hosting, JSON export
-  db.js            SQLite schema (lists, goals, tasks + sub-tasks)
+  index.js         entry, auth gate, settings, push, ICS feed, export/import
+  db.js            SQLite schema (lists, goals, tasks, calendars, push, settings)
   auth.js          passcode login + stateless signed tokens
   env.js           tiny .env loader
-  routes/          tasks, goals, lists
+  ical.js          dependency-free ICS parse/expand + feed generation
+  push.js          Web Push (VAPID) + the reminder loop
+  routes/          tasks, goals, lists, calendar
 public/            phone-first PWA (vanilla JS, no build step)
   index.html  app.js  styles.css  manifest.webmanifest  sw.js  icon.svg
+native/            Capacitor iOS/Windows scaffold + WidgetKit widget (build in Xcode)
+Dockerfile  railway.json  DEPLOY.md   self-hosting
 ```
 
-Two dependencies (`express`, `better-sqlite3`), no build tooling. Your database
-lives in `data/` and is git-ignored — it never gets committed.
+Three dependencies (`express`, `better-sqlite3`, `web-push`), no build tooling.
+Your database lives in `data/` and is git-ignored — it never gets committed.
 
 ## Design principles it follows
 
