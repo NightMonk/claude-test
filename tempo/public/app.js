@@ -54,6 +54,10 @@ async function boot() {
   showApp();
   await refreshMeta();
   applyTheme();
+  if (new URLSearchParams(location.search).get('google') === 'connected') {
+    history.replaceState(null, '', '/');
+    state.sub = { type: 'settings' }; toast('Google Calendar connected ✓');
+  }
   render();
 }
 async function refreshMeta() {
@@ -409,7 +413,7 @@ function dueLabelFromDate(s) { const d = parseYmd(s); return `${d.getDate()} ${M
 async function renderSettings() {
   $('#title').textContent = 'Settings';
   const s = state.settings = await api('GET', '/settings');
-  const cals = await api('GET', '/calendars');
+  const [cals, gstatus] = await Promise.all([api('GET', '/calendars'), api('GET', '/google/status')]);
   const v = $('#view'); v.innerHTML = '';
   const pushOn = ('Notification' in window) && Notification.permission === 'granted' && await hasPushSub();
 
@@ -433,12 +437,24 @@ async function renderSettings() {
   v.appendChild(notif);
 
   v.appendChild(el(`<div class="section-label">Calendar sync</div>`));
-  const calCard = el(`<div class="settings-card"><div id="cal-list"></div>
+  const googleBlock = gstatus.connected
+    ? `<div class="google-row"><span class="g-badge">📅 Google</span><div style="flex:1"><b>Connected</b>${gstatus.email ? `<br><small class="muted">${esc(gstatus.email)}</small>` : ''}</div>
+        <button class="chip-btn" id="g-sync">Sync</button><button class="chip-btn btn-danger" id="g-disconnect">Disconnect</button></div>`
+    : gstatus.configured
+      ? `<div class="google-row"><span class="g-badge">📅 Google</span><div style="flex:1"><b>Google Calendar</b><br><small class="muted">Two-way: see events here, tasks flow back via the feed below.</small></div>
+          <button class="chip-btn" id="g-connect">Connect</button></div>`
+      : `<div class="google-row"><span class="g-badge">📅 Google</span><div style="flex:1"><b>Google Calendar</b><br><small class="muted">Not set up on this server — see DEPLOY.md, or use ICS below (works with Google too).</small></div></div>`;
+  const calCard = el(`<div class="settings-card">
+    ${googleBlock}
+    <div id="cal-list"></div>
     <button class="chip-btn" id="add-cal" style="width:100%;margin-top:8px">＋ Subscribe to a calendar (ICS)</button>
     <div class="set-sub"><b>Publish your tasks</b><br><small class="muted">Add this URL in Google/Apple/Outlook to see Tempo tasks in your calendar:</small>
       <div class="feed-url"><code id="feed">${esc(s.feed_url || '')}</code><button class="chip-btn" id="copy-feed">Copy</button></div></div>
   </div>`);
   v.appendChild(calCard);
+  $('#g-connect', calCard)?.addEventListener('click', async () => { try { const { url } = await api('GET', '/google/auth'); location.href = url; } catch (e) { toast(e.message); } });
+  $('#g-sync', calCard)?.addEventListener('click', async () => { toast('Syncing Google…'); const r = await api('POST', '/google/sync'); toast(r.ok ? `Synced — ${r.count} events` : 'Sync failed'); render(); });
+  $('#g-disconnect', calCard)?.addEventListener('click', async () => { await api('POST', '/google/disconnect'); toast('Google disconnected'); render(); });
   const cl = $('#cal-list', calCard);
   if (!cals.length) cl.appendChild(el(`<p class="muted" style="font-size:13px;margin:2px 0">No calendars yet.</p>`));
   cals.forEach((c) => {

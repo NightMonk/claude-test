@@ -1,6 +1,7 @@
 import express from 'express';
 import db from '../db.js';
 import { parseICS, expandEvents } from '../ical.js';
+import { syncGoogleInto, GOOGLE_MARKER } from '../google.js';
 
 const router = express.Router();
 
@@ -8,6 +9,11 @@ const router = express.Router();
 export async function syncCalendar(id) {
   const cal = db.prepare('SELECT * FROM calendars WHERE id = ?').get(id);
   if (!cal) return;
+  // Google calendars sync via the API instead of fetching an ICS URL.
+  if (cal.url && cal.url.startsWith(GOOGLE_MARKER.split(':')[0] + ':')) {
+    try { return await syncGoogleInto(id); }
+    catch (e) { db.prepare('UPDATE calendars SET last_error = ? WHERE id = ?').run(String(e.message || e), id); return { ok: false, error: String(e.message || e) }; }
+  }
   try {
     const res = await fetch(cal.url.replace(/^webcal:/i, 'https:'), { redirect: 'follow' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -41,6 +47,16 @@ router.post('/', async (req, res) => {
 router.post('/:id/sync', async (req, res) => res.json(await syncCalendar(Number(req.params.id))));
 
 router.delete('/:id', (req, res) => { db.prepare('DELETE FROM calendars WHERE id = ?').run(req.params.id); res.json({ ok: true }); });
+
+// Keep every subscribed calendar fresh in the background (every 30 minutes).
+export function startCalendarRefresh() {
+  const tick = async () => {
+    const cals = db.prepare('SELECT id FROM calendars').all();
+    for (const c of cals) { try { await syncCalendar(c.id); } catch { /* keep going */ } }
+  };
+  setInterval(tick, 30 * 60 * 1000);
+  setTimeout(tick, 10000); // once shortly after boot
+}
 
 // Expanded event instances across all feeds within a date range.
 router.get('/events', (req, res) => {

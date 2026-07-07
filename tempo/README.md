@@ -28,9 +28,12 @@ the design in [`../design/`](../design) — a self-hosted PWA that works on
   min"** button on every task.
 - **Calendar** — **Day / Week / Month / Year** views. The **Day** view is a
   time-blocking timeline: **drag unscheduled tasks onto an hour** to give them a time.
-- **Calendar sync** — subscribe to your Google/Apple/Outlook calendar (secret ICS
-  URL) to see events alongside tasks, and **publish your Tempo tasks back** as an
-  ICS feed your calendar app can subscribe to.
+- **Calendar sync** — connect **Google Calendar** with one-click OAuth, or subscribe
+  to any Google/Apple/Outlook **ICS** URL, to see events alongside tasks. **Publish
+  your Tempo tasks back** as an ICS feed your calendar app subscribes to. Feeds
+  auto-refresh in the background.
+- **Installs like a native app** on **iPhone** (Add to Home Screen), **Windows**
+  and desktop browsers (Install), with proper PNG/maskable icons.
 - **Goals** — each shows live progress and the single **next action**, so a goal
   always reaches down to something concrete today.
 - **Weekly review** — a two-minute ritual: your week's wins, carry unfinished

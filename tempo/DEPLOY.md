@@ -77,11 +77,25 @@ To pin stable keys across a fresh database, set `VAPID_PUBLIC` / `VAPID_PRIVATE`
 
 ## Calendar sync
 
+Two ways, both two-directional:
+
+**A. Google — one-click OAuth (recommended for Google users).**
+1. In [Google Cloud Console](https://console.cloud.google.com): create a project,
+   **enable the Google Calendar API**, and configure the OAuth consent screen
+   (add yourself as a test user).
+2. Create an **OAuth Client ID → Web application**. Add the redirect URI
+   `https://YOUR-HOST/api/google/callback` (exact host, HTTPS).
+3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in your environment.
+4. In the app: **Settings → Calendar sync → Google → Connect**. Your Google events
+   appear on the calendar; Tempo refreshes them automatically every 30 min.
+
+**B. ICS — works with Google, Apple and Outlook, no setup.**
 - **See your events in Tempo:** Settings → *Subscribe to a calendar* → paste the
   secret ICS URL (Google: “Secret address in iCal format”; Apple iCloud: Public
   Calendar link; Outlook: Publish → ICS).
-- **See your Tempo tasks in your calendar:** Settings shows a *feed URL* — add it
-  as a subscribed calendar in Google/Apple/Outlook.
+- **See your Tempo tasks in your calendar (both methods):** Settings shows a *feed
+  URL* — add it as a subscribed calendar in Google/Apple/Outlook. This is how tasks
+  flow back out, so the Google scope stays read-only (least privilege).
 
 ## Native apps (iOS / Windows)
 

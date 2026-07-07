@@ -74,7 +74,12 @@ db.exec(`
     quiet_start   TEXT,                            -- "HH:MM" no reminders after
     quiet_end     TEXT,
     review_note   TEXT,
-    review_at     TEXT
+    review_at     TEXT,
+    google_refresh_token TEXT,
+    google_access_token  TEXT,
+    google_token_expiry  INTEGER,                  -- epoch ms
+    google_email         TEXT,
+    google_state         TEXT                       -- pending OAuth state nonce
   );
 
   -- Subscribed external calendars (read-only ICS feeds).
@@ -117,9 +122,14 @@ db.exec(`
   );
 `);
 
-// Lightweight migration for databases created before My Day existed.
-const taskCols = db.prepare('PRAGMA table_info(tasks)').all().map((c) => c.name);
-if (!taskCols.includes('my_day_date')) db.exec('ALTER TABLE tasks ADD COLUMN my_day_date TEXT');
+// Lightweight migrations for databases created before newer columns existed.
+const ensureCol = (table, col, type) => {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+};
+ensureCol('tasks', 'my_day_date', 'TEXT');
+for (const c of ['google_refresh_token', 'google_access_token', 'google_email', 'google_state']) ensureCol('settings', c, 'TEXT');
+ensureCol('settings', 'google_token_expiry', 'INTEGER');
 
 // Ensure the single settings row exists, with a random feed token.
 if (!db.prepare('SELECT 1 FROM settings WHERE id = 1').get()) {

@@ -8,14 +8,19 @@ import { issueToken, checkPasscode, requireAuth } from './auth.js';
 import tasksRouter from './routes/tasks.js';
 import goalsRouter from './routes/goals.js';
 import listsRouter from './routes/lists.js';
-import calendarRouter from './routes/calendar.js';
+import calendarRouter, { syncCalendar, startCalendarRefresh } from './routes/calendar.js';
 import { buildICS } from './ical.js';
 import { initPush, publicKey, saveSubscription, removeSubscription, startReminderLoop } from './push.js';
+import * as google from './google.js';
+import { randomBytes } from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+app.set('trust proxy', 1); // behind Railway/Render/Fly HTTPS proxy → correct req.protocol
 app.use(express.json({ limit: '4mb' }));
+
+const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 
 // --- Health check (for deploy platforms) ---
 app.get('/healthz', (req, res) => res.json({ ok: true }));
@@ -33,6 +38,18 @@ app.get('/feed/:token.ics', (req, res) => {
   const tasks = db.prepare("SELECT * FROM tasks WHERE parent_id IS NULL AND due_at IS NOT NULL").all();
   res.set('Content-Type', 'text/calendar; charset=utf-8');
   res.send(buildICS(tasks, 'Tempo tasks'));
+});
+
+// --- Google OAuth callback (public: Google redirects the browser here) ---
+app.get('/api/google/callback', async (req, res) => {
+  try {
+    await google.handleCallback(baseUrl(req), req.query.code, req.query.state);
+    const row = google.ensureGoogleCalendarRow();
+    syncCalendar(row.id).catch(() => {});
+    res.redirect('/?google=connected');
+  } catch (e) {
+    res.status(400).send(`Google connection failed: ${e.message}. <a href="/">Back to Tempo</a>`);
+  }
 });
 
 // Everything under /api (except /api/login) requires a valid token.
@@ -55,6 +72,18 @@ api.patch('/settings', (req, res) => {
   if (set.length) db.prepare(`UPDATE settings SET ${set.map((f) => `${f} = ?`).join(', ')} WHERE id = 1`).run(...set.map((f) => (req.body[f] === '' ? null : req.body[f])));
   res.json({ ok: true });
 });
+
+// Google Calendar sync
+api.get('/google/status', (req, res) => res.json(google.status()));
+api.get('/google/auth', (req, res) => {
+  if (!google.isConfigured()) return res.status(400).json({ error: 'Google is not configured on this server' });
+  res.json({ url: google.authUrl(baseUrl(req), randomBytes(16).toString('hex')) });
+});
+api.post('/google/sync', async (req, res) => {
+  try { const row = google.ensureGoogleCalendarRow(); res.json(await syncCalendar(row.id)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+api.post('/google/disconnect', (req, res) => { google.disconnect(); res.json({ ok: true }); });
 
 // Web Push
 api.get('/push/key', (req, res) => res.json({ key: publicKey() }));
@@ -100,6 +129,7 @@ app.use(express.static(join(__dirname, '..', 'public')));
 
 initPush();
 startReminderLoop();
+startCalendarRefresh();
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Tempo running on http://localhost:${PORT}`));
