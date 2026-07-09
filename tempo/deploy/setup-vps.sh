@@ -87,11 +87,25 @@ $DOMAIN {
 CADDY
 systemctl reload caddy
 
-echo "==> [6/6] Firewall…"
-ufw allow OpenSSH >/dev/null 2>&1 || true
-ufw allow 80/tcp   >/dev/null 2>&1 || true
-ufw allow 443/tcp  >/dev/null 2>&1 || true
-yes | ufw enable   >/dev/null 2>&1 || true
+echo "==> [6/6] Firewall — opening 80 & 443…"
+if command -v netfilter-persistent >/dev/null 2>&1 && iptables -C INPUT -j REJECT --reject-with icmp-host-prohibited 2>/dev/null; then
+  # Oracle-style image: iptables drops everything except SSH. Insert ACCEPT rules
+  # for 80/443 just before the catch-all REJECT, then persist them.
+  for p in 80 443; do
+    iptables -C INPUT -p tcp --dport "$p" -j ACCEPT 2>/dev/null \
+      || iptables -I INPUT 6 -p tcp --dport "$p" -m state --state NEW -j ACCEPT 2>/dev/null \
+      || iptables -I INPUT -p tcp --dport "$p" -j ACCEPT
+  done
+  netfilter-persistent save || true
+  echo "    (updated Oracle-style iptables)"
+elif command -v ufw >/dev/null 2>&1; then
+  ufw allow OpenSSH >/dev/null 2>&1 || true
+  ufw allow 80/tcp  >/dev/null 2>&1 || true
+  ufw allow 443/tcp >/dev/null 2>&1 || true
+  yes | ufw enable  >/dev/null 2>&1 || true
+fi
+echo "    IMPORTANT: also open TCP 80 & 443 in your provider's cloud firewall"
+echo "    (Oracle: VCN → Security List → Add Ingress Rules). Caddy needs 80 for the cert."
 
 echo ""
 echo "==================================================================="
