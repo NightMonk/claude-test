@@ -70,7 +70,7 @@ db.exec(`
     vapid_public  TEXT,
     vapid_private TEXT,
     theme         TEXT NOT NULL DEFAULT 'auto',   -- auto | light | dark
-    week_start    INTEGER NOT NULL DEFAULT 0,      -- 0 Sun, 1 Mon
+    week_start    INTEGER NOT NULL DEFAULT 1,      -- 0 Sun, 1 Mon (default Monday)
     quiet_start   TEXT,                            -- "HH:MM" no reminders after
     quiet_end     TEXT,
     review_note   TEXT,
