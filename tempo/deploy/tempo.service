@@ -1,0 +1,18 @@
+# systemd unit for Tempo. Put at /etc/systemd/system/tempo.service, then:
+#   systemctl daemon-reload && systemctl enable --now tempo
+# Adjust WorkingDirectory if you cloned somewhere other than /opt/tempo/repo.
+
+[Unit]
+Description=Tempo — ADHD-first tasks
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/tempo/repo/tempo
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=3
+User=tempo
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
