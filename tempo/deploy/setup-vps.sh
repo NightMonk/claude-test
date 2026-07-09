@@ -91,10 +91,13 @@ echo "==> [6/6] Firewall — opening 80 & 443…"
 if command -v netfilter-persistent >/dev/null 2>&1 && iptables -C INPUT -j REJECT --reject-with icmp-host-prohibited 2>/dev/null; then
   # Oracle-style image: iptables drops everything except SSH. Insert ACCEPT rules
   # for 80/443 just before the catch-all REJECT, then persist them.
+  # Insert the ACCEPTs just BEFORE the catch-all REJECT (its exact line number
+  # varies), so they actually take effect. Fall back to the top of the chain.
   for p in 80 443; do
-    iptables -C INPUT -p tcp --dport "$p" -j ACCEPT 2>/dev/null \
-      || iptables -I INPUT 6 -p tcp --dport "$p" -m state --state NEW -j ACCEPT 2>/dev/null \
-      || iptables -I INPUT -p tcp --dport "$p" -j ACCEPT
+    if ! iptables -C INPUT -p tcp --dport "$p" -j ACCEPT 2>/dev/null; then
+      rej=$(iptables -L INPUT --line-numbers -n | awk '/REJECT/{print $1; exit}')
+      iptables -I INPUT "${rej:-1}" -p tcp --dport "$p" -m state --state NEW -j ACCEPT
+    fi
   done
   netfilter-persistent save || true
   echo "    (updated Oracle-style iptables)"
