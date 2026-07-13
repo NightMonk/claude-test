@@ -25,8 +25,19 @@ function verifyToken(token) {
   return crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected));
 }
 
-// Compare the supplied passcode safely.
+// Compare the supplied passcode safely. Two supported forms:
+//  - PASSCODE=plaintext                      (simple)
+//  - PASSCODE_HASH=salt:sha256(salt+code)    (nothing plaintext on disk; wins if set)
+// Generate a hash with:
+//  node -e "const c=require('crypto'),s=c.randomBytes(16).toString('hex');console.log(s+':'+c.createHash('sha256').update(s+process.argv[1]).digest('hex'))" 'your-passcode'
 export function checkPasscode(supplied) {
+  const hash = process.env.PASSCODE_HASH;
+  if (hash && hash.includes(':')) {
+    const [salt, expected] = hash.split(':');
+    const got = crypto.createHash('sha256').update(salt + String(supplied || '')).digest('hex');
+    if (got.length !== expected.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));
+  }
   const a = Buffer.from(String(supplied || ''));
   const b = Buffer.from(PASSCODE);
   if (a.length !== b.length) return false;

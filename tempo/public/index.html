@@ -24,7 +24,10 @@
       <div class="brand"><span class="brand-mark">⏱</span> Tempo</div>
       <p class="muted">A calmer way to get things done. Enter your passcode.</p>
       <form id="login-form">
-        <input id="passcode" type="password" inputmode="numeric" placeholder="Passcode" autocomplete="current-password" />
+        <div class="pass-wrap">
+          <input id="passcode" type="password" placeholder="Passcode" autocomplete="current-password" />
+          <button type="button" id="pass-toggle" class="pass-toggle" aria-label="Show passcode">👁</button>
+        </div>
         <button type="submit">Unlock</button>
       </form>
       <p id="login-error" class="error hidden"></p>

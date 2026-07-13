@@ -90,35 +90,44 @@ api.get('/push/key', (req, res) => res.json({ key: publicKey() }));
 api.post('/push/subscribe', (req, res) => { saveSubscription(req.body); res.json({ ok: true }); });
 api.post('/push/unsubscribe', (req, res) => { removeSubscription(req.body?.endpoint); res.json({ ok: true }); });
 
-// Full JSON backup + restore.
+// Full JSON backup + restore. Export includes non-secret settings; secrets
+// (VAPID private key, Google tokens, feed token) never leave the server.
 api.get('/export', (req, res) => {
+  const s = db.prepare('SELECT theme, week_start, quiet_start, quiet_end, review_note, review_at FROM settings WHERE id = 1').get();
   res.json({
     exported_at: new Date().toISOString(),
+    settings: s,
     lists: db.prepare('SELECT * FROM lists').all(),
     goals: db.prepare('SELECT * FROM goals').all(),
     tasks: db.prepare('SELECT * FROM tasks').all(),
   });
 });
+// Import MERGES by id — upserts rows, never deletes anything.
 api.post('/import', (req, res) => {
-  const { lists, goals, tasks } = req.body || {};
+  const { lists, goals, tasks, settings } = req.body || {};
   if (!Array.isArray(tasks)) return res.status(400).json({ error: 'That file does not look like a Tempo backup' });
+  const tableCols = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  const upsertAll = (table, rows) => {
+    const known = tableCols(table);
+    for (const row of rows || []) {
+      const c = Object.keys(row).filter((k) => known.includes(k));
+      if (!c.includes('id')) continue;
+      const sets = c.filter((k) => k !== 'id').map((k) => `${k} = excluded.${k}`).join(', ');
+      db.prepare(`INSERT INTO ${table} (${c.join(',')}) VALUES (${c.map(() => '?').join(',')})
+                  ON CONFLICT(id) DO UPDATE SET ${sets}`).run(...c.map((k) => row[k]));
+    }
+  };
   const tx = db.transaction(() => {
-    db.prepare('DELETE FROM tasks').run();
-    db.prepare('DELETE FROM goals').run();
-    db.prepare('DELETE FROM lists').run();
-    const cols = (row) => Object.keys(row);
-    const insertAll = (table, rows) => {
-      for (const row of rows || []) {
-        const c = cols(row);
-        db.prepare(`INSERT INTO ${table} (${c.join(',')}) VALUES (${c.map(() => '?').join(',')})`).run(...c.map((k) => row[k]));
-      }
-    };
-    insertAll('lists', lists);
-    insertAll('goals', goals);
-    insertAll('tasks', (tasks || []).filter((t) => t.parent_id == null)); // parents first for FK
-    insertAll('tasks', (tasks || []).filter((t) => t.parent_id != null));
+    upsertAll('lists', lists);
+    upsertAll('goals', goals);
+    upsertAll('tasks', (tasks || []).filter((t) => t.parent_id == null)); // parents first for FK
+    upsertAll('tasks', (tasks || []).filter((t) => t.parent_id != null));
+    if (settings && typeof settings === 'object') {
+      const fields = ['theme', 'week_start', 'quiet_start', 'quiet_end', 'review_note', 'review_at'].filter((f) => f in settings);
+      if (fields.length) db.prepare(`UPDATE settings SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = 1`).run(...fields.map((f) => settings[f]));
+    }
   });
-  try { tx(); res.json({ ok: true, tasks: tasks.length }); }
+  try { tx(); res.json({ ok: true, merged: tasks.length }); }
   catch (e) { res.status(400).json({ error: 'Import failed: ' + e.message }); }
 });
 

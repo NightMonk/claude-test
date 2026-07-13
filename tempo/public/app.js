@@ -34,6 +34,23 @@ function logout() { TOKEN = ''; localStorage.removeItem('tempo_token'); showLogi
 function showLogin() { $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
 function showApp() { $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); }
 
+// Lock keyboard preference (per device): default full text keyboard; optional
+// numeric PIN pad for numeric-only passcodes. Applied before iOS decides which
+// keyboard to raise.
+function applyLockKeyboard() {
+  const input = $('#passcode');
+  if (localStorage.getItem('tempo_pin_mode') === '1') input.setAttribute('inputmode', 'numeric');
+  else input.removeAttribute('inputmode');
+}
+applyLockKeyboard();
+$('#pass-toggle').addEventListener('click', () => {
+  const input = $('#passcode');
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  $('#pass-toggle').textContent = show ? '🙈' : '👁';
+  input.focus();
+});
+
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('#login-error');
@@ -423,8 +440,18 @@ async function renderSettings() {
   </div></div>
   <div class="set-row"><span>Week starts</span><div class="chips" id="set-week">
     ${[['Sunday', 0], ['Monday', 1]].map(([n, val]) => `<button class="chip-btn ${(s.week_start || 0) == val ? 'on' : ''}" data-week="${val}">${n}</button>`).join('')}
+  </div></div>
+  <div class="set-row"><span>Lock keyboard<br><small class="muted">PIN shows the number pad — only for all-digit passcodes</small></span><div class="chips" id="set-lockkb">
+    ${[['Text', '0'], ['PIN', '1']].map(([n, val]) => `<button class="chip-btn ${(localStorage.getItem('tempo_pin_mode') || '0') === val ? 'on' : ''}" data-lockkb="${val}">${n}</button>`).join('')}
   </div></div></div>`);
   v.appendChild(theme);
+  $('#set-lockkb', theme).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-lockkb]'); if (!b) return;
+    localStorage.setItem('tempo_pin_mode', b.dataset.lockkb);
+    applyLockKeyboard();
+    $('#set-lockkb').querySelectorAll('.chip-btn').forEach((x) => x.classList.toggle('on', x === b));
+    toast(b.dataset.lockkb === '1' ? 'Lock uses the number pad on this device' : 'Lock uses the full keyboard');
+  });
 
   v.appendChild(el(`<div class="section-label">Reminders</div>`));
   const notif = el(`<div class="settings-card">
@@ -494,7 +521,7 @@ async function renderSettings() {
   $('#s-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', async (e) => {
     const file = e.target.files[0]; if (!file) return;
-    if (!confirm('Restore will replace all current tasks, lists and goals with the backup. Continue?')) return;
+    if (!confirm('Restore merges the backup into your current data (matching items are updated, nothing is deleted). Continue?')) return;
     try { const data = JSON.parse(await file.text()); await api('POST', '/import', data); toast('Restored ✓'); refreshMeta().then(render); }
     catch (err) { toast('Could not import that file'); }
   });
