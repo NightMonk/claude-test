@@ -1,7 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#5b5bd6"/>
-  <circle cx="256" cy="272" r="150" fill="none" stroke="#fff" stroke-width="30" opacity="0.35"/>
-  <path d="M256 272 V150" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round"/>
-  <path d="M256 272 L340 320" fill="none" stroke="#ff7a59" stroke-width="30" stroke-linecap="round"/>
-  <rect x="196" y="70" width="120" height="34" rx="17" fill="#fff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Tempo">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5C6470"/>
+      <stop offset="1" stop-color="#3A414D"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded app tile -->
+  <rect width="512" height="512" rx="116" fill="url(#g)"/>
+  <!-- Rising rhythm: three ascending rounded bars = tempo + momentum.
+       All bars share a baseline at y=384; tops ascend left to right. -->
+  <rect x="150" y="288" width="48" height="96"  rx="24" fill="#F4F1EA"/>
+  <rect x="232" y="216" width="48" height="168" rx="24" fill="#F4F1EA"/>
+  <rect x="314" y="128" width="48" height="256" rx="24" fill="#E07856"/>
 </svg>

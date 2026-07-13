@@ -117,7 +117,7 @@ button { cursor: pointer; }
   padding: 32px 28px; width: 100%; max-width: 360px; box-shadow: var(--shadow); text-align: center;
 }
 .brand { font-size: var(--fs-1); font-weight: 800; letter-spacing: var(--ls-head); display: flex; align-items: center; justify-content: center; gap: 8px; }
-.brand-mark { color: var(--accent); }
+.brand-mark { width: 40px; height: 40px; border-radius: 10px; display: inline-block; vertical-align: middle; }
 .login-card p { margin: 8px 0 20px; font-size: var(--fs-4); }
 .login-card input {
   width: 100%; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-ctl);
@@ -612,6 +612,24 @@ button { cursor: pointer; }
   animation: burst .9s ease-out forwards;
 }
 @keyframes burst { to { transform: translate(var(--dx), var(--dy)) rotate(360deg); opacity: 0; } }
+
+/* ---- Phase 6: micro-interactions ---- */
+/* Uniform tactile press feedback on tappable surfaces. */
+.chip-btn, .list-row, .menu-item, .goal-card, .btn-primary, .btn-ghost,
+.segmented button, .year-month, .day-cell, .completed-head, .cal-event, .pill-action {
+  transition: transform .09s ease, background-color .15s ease, border-color .15s ease;
+}
+.chip-btn:active, .list-row:active, .menu-item:active, .goal-card:active,
+.btn-primary:active, .btn-ghost:active, .segmented button:active, .year-month:active,
+.day-cell:active, .completed-head:active, .cal-event:active { transform: scale(.97); }
+
+/* Gentle screen entrance on navigation (added by JS on tab/back changes). */
+#view.animate-in { animation: viewin .24s cubic-bezier(.2,.9,.3,1); }
+@keyframes viewin { from { opacity: 0; transform: translateY(8px); } }
+
+/* Completing a task: a soft settle before it re-renders into the done group. */
+.task.settling { animation: settle .3s ease; }
+@keyframes settle { 50% { transform: scale(.985); opacity: .7; } }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }

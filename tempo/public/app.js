@@ -1667,6 +1667,7 @@ $('#view').addEventListener('click', async (e) => {
 
   if (btn.dataset.toggle) {
     btn.classList.add('pop', 'done');
+    btn.closest('.task')?.classList.add('settling');
     await toggleTask(Number(btn.dataset.toggle));
   } else if (btn.dataset.subtoggle) { await api('POST', `/tasks/${btn.dataset.subtoggle}/toggle`); render(); }
   else if (btn.dataset.subdel) { await api('DELETE', '/tasks/' + btn.dataset.subdel); render(); }
@@ -1710,8 +1711,11 @@ function openSheet() { $('#sheet').classList.remove('hidden'); }
 function closeSheet() { $('#sheet').classList.add('hidden'); $('#sheet-body').innerHTML = ''; }
 $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
 $('#fab').addEventListener('click', openCapture);
-$('#back-btn').addEventListener('click', () => { state.sub = null; render(); });
-document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => { state.tab = tab.dataset.view; state.sub = null; render(); }));
+// Replay a gentle entrance on the view after a navigation change (not on
+// in-place data refreshes, which would feel busy).
+function animateView() { const v = $('#view'); if (!v) return; v.classList.remove('animate-in'); void v.offsetWidth; v.classList.add('animate-in'); }
+$('#back-btn').addEventListener('click', () => { state.sub = null; render().then(animateView); });
+document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => { state.tab = tab.dataset.view; state.sub = null; render().then(animateView); }));
 
 $('#more-btn').addEventListener('click', () => {
   const body = $('#sheet-body');
