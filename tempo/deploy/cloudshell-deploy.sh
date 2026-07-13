@@ -1,80 +1,75 @@
 #!/usr/bin/env bash
-# Deploy Tempo from ORACLE CLOUD SHELL (phone-friendly; no SSH key needed).
+# ONE-TIME bootstrap deploy for Tempo, from ORACLE CLOUD SHELL (phone-only).
 #
-# In the OCI Console top bar, tap the Developer-tools icon (the little
-# terminal/monitor with brackets, next to the region name) -> Cloud Shell,
-# wait for the prompt, then paste:
+# Why this exists: the operator is iPhone-only with no SSH client and no local
+# copy of the server key; OCI Run Command is unavailable on this Ubuntu image.
+# Cloud Shell is the only channel a phone has. This uses OCI **Bastion**
+# (agent-injected ephemeral access — no pre-existing key needed) to run the
+# deploy once, which installs the pull-based auto-updater timer. After this,
+# the server polls GitHub every 5 min and self-deploys forever — so this script
+# never needs to run again.
 #
+# HOW TO RUN (paste this single line into Cloud Shell, press return):
 #   bash <(curl -fsSL https://raw.githubusercontent.com/NightMonk/claude-test/refs/heads/claude/adhd-todo-app-design-loysre/tempo/deploy/cloudshell-deploy.sh)
-#
-# It finds the 'tempo' instance, enables Oracle's Run Command agent plugin,
-# then uses it to pull the latest code, install the auto-updater (so this is
-# the last manual deploy ever) and restart the app — all without SSH.
 set -uo pipefail
+KEY="$HOME/.ssh/tempo_deploy_$$"
+REMOTE='sudo -u tempo git -C /opt/tempo/repo pull --ff-only && sudo bash /opt/tempo/repo/tempo/deploy/install-autoupdate.sh && sudo systemctl restart tempo && echo ===DEPLOY_OK==='
+say() { printf '\n==> %s\n' "$*"; }
+die() { printf '\n!! %s\n' "$*"; exit 1; }
 
-DEPLOY_SCRIPT='sudo -u tempo git -C /opt/tempo/repo pull --ff-only && sudo bash /opt/tempo/repo/tempo/deploy/install-autoupdate.sh && sudo systemctl restart tempo && echo DEPLOY_OK'
-
-echo "==> Locating the 'tempo' instance in this region…"
-INST=$(oci search resource structured-search \
-  --query-text "query instance resources where displayName = 'tempo'" \
-  --query 'data.items[0].identifier' --raw-output 2>/dev/null)
-if [ -z "${INST:-}" ] || [ "$INST" = "null" ]; then
-  echo "!! Could not find an instance named 'tempo'. Is Cloud Shell in UK South (London)?"
-  echo "   (Region menu is in the console top bar; Cloud Shell follows it.)"
-  exit 1
-fi
+say "Finding the 'tempo' instance in the current region…"
+INST=$(oci search resource structured-search --query-text "query instance resources where displayName = 'tempo'" --query 'data.items[0].identifier' --raw-output 2>/dev/null)
+[ -n "${INST:-}" ] && [ "$INST" != "null" ] || die "No instance named 'tempo' here. Make sure Cloud Shell's region (top bar) is UK South (London)."
 COMP=$(oci compute instance get --instance-id "$INST" --query 'data."compartment-id"' --raw-output)
-echo "    found: $INST"
+SUBNET=$(oci compute instance list-vnics --instance-id "$INST" --query 'data[0]."subnet-id"' --raw-output)
+PRIVIP=$(oci compute instance list-vnics --instance-id "$INST" --query 'data[0]."private-ip"' --raw-output)
+echo "    instance found; private IP $PRIVIP"
 
-echo "==> Ensuring the Run Command plugin is enabled (idempotent)…"
+say "Enabling the Bastion agent plugin (idempotent)…"
 oci compute instance update --instance-id "$INST" --force \
-  --agent-config '{"isMonitoringDisabled": false, "isManagementDisabled": false, "pluginsConfig": [{"name": "Compute Instance Run Command", "desiredState": "ENABLED"}]}' \
-  >/dev/null 2>&1 || true
+  --agent-config '{"isMonitoringDisabled": false, "isManagementDisabled": false, "pluginsConfig": [{"name": "Bastion", "desiredState": "ENABLED"}]}' >/dev/null 2>&1 || true
 
-echo "==> Waiting for the plugin to report RUNNING (first enable can take ~5 min)…"
-ST=""
-for i in $(seq 1 60); do
-  ST=$(oci instance-agent plugin get --instanceagent-id "$INST" --compartment-id "$COMP" \
-        --plugin-name "Compute Instance Run Command" --query 'data.status' --raw-output 2>/dev/null)
-  [ "$ST" = "RUNNING" ] && break
-  printf '.'; sleep 10
-done
-echo ""
-if [ "$ST" != "RUNNING" ]; then
-  echo "!! Plugin never reached RUNNING (status: ${ST:-unknown})."
-  echo "   Wait 5 more minutes and re-run this one-liner. If it still fails, screenshot this output."
-  exit 1
+say "Waiting for the Bastion plugin to report RUNNING (first enable can take ~5 min)…"
+for i in $(seq 1 40); do
+  ST=$(oci instance-agent plugin get --instanceagent-id "$INST" --compartment-id "$COMP" --plugin-name Bastion --query 'data.status' --raw-output 2>/dev/null)
+  [ "$ST" = "RUNNING" ] && break; printf '.'; sleep 15
+done; echo ""
+[ "${ST:-}" = "RUNNING" ] || die "Bastion plugin never came up (status: ${ST:-unknown}). Wait 5 min and re-run the one-liner."
+
+say "Creating a Bastion (reusing one if it exists)…"
+BID=$(oci bastion bastion list --compartment-id "$COMP" --query "data[?name=='tempo-bastion'].id | [0]" --raw-output 2>/dev/null)
+if [ -z "${BID:-}" ] || [ "$BID" = "null" ]; then
+  BID=$(oci bastion bastion create --bastion-type standard --compartment-id "$COMP" --target-subnet-id "$SUBNET" \
+        --name tempo-bastion --client-cidr-list '["0.0.0.0/0"]' --wait-for-state ACTIVE --query 'data.id' --raw-output) \
+    || die "Could not create a Bastion. In the console: Identity & Security -> Bastion -> create one on subnet of tempo-vcn, then re-run."
 fi
 
-echo "==> Sending the deploy command to the server…"
-CMD=$(oci instance-agent command create \
-  --compartment-id "$COMP" \
-  --target "{\"instanceId\": \"$INST\"}" \
-  --content "{\"source\": {\"sourceType\": \"TEXT\", \"text\": \"$DEPLOY_SCRIPT\"}, \"output\": {\"outputType\": \"TEXT\"}}" \
-  --display-name "tempo-deploy" \
-  --execution-time-out-in-seconds 900 \
-  --query 'data.id' --raw-output)
-echo "    command: $CMD"
+say "Generating an ephemeral key + opening a managed SSH session…"
+ssh-keygen -t ed25519 -f "$KEY" -N "" -q
+SID=$(oci bastion session create-managed-ssh --bastion-id "$BID" --target-resource-id "$INST" \
+      --target-os-username ubuntu --target-private-ip "$PRIVIP" --ssh-public-key-file "${KEY}.pub" \
+      --session-ttl 1800 --wait-for-state ACTIVE --query 'data.id' --raw-output) \
+  || die "Could not open a Bastion session (subnet may block the Bastion service, or the plugin isn't ready)."
 
-echo "==> Waiting for it to finish…"
-STATE="PENDING"
-for i in $(seq 1 90); do
-  STATE=$(oci instance-agent command-execution get --command-id "$CMD" --instance-id "$INST" \
-           --query 'data."lifecycle-state"' --raw-output 2>/dev/null || echo "PENDING")
-  case "$STATE" in SUCCEEDED|FAILED|TIMED_OUT|CANCELED) break;; esac
-  printf '.'; sleep 10
-done
-echo ""
-echo "==> Result: $STATE"
-echo "---- server output ----"
-oci instance-agent command-execution get --command-id "$CMD" --instance-id "$INST" \
-  --query 'data.content' 2>/dev/null || true
-echo "-----------------------"
-if [ "$STATE" = "SUCCEEDED" ]; then
-  echo ""
-  echo "✅ Deployed. Auto-updates are now ON — future releases install themselves."
-  echo "   Open https://tempo.falkconsulting.co.uk (close & reopen once) and log in"
-  echo "   with the full keyboard."
+say "Deploying over the Bastion tunnel…"
+CONN=$(oci bastion session get --session-id "$SID" --query 'data."ssh-metadata".command' --raw-output)
+CONN=${CONN//<privateKey>/$KEY}
+CONN=${CONN//ssh /ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null }
+eval "$CONN \"$REMOTE\""
+RC=$?
+
+rm -f "$KEY" "${KEY}.pub"
+if [ $RC -eq 0 ]; then
+  cat <<'DONE'
+
+=======================================================================
+ DEPLOYED. Auto-updates are now ON — every future release installs
+ itself within ~5 minutes. You never need to run this again.
+
+ Open https://tempo.falkconsulting.co.uk (close & reopen once), then
+ log in with the FULL keyboard.
+=======================================================================
+DONE
 else
-  echo "❌ Something went wrong — screenshot everything above and send it to Claude."
+  die "The remote deploy command failed. Screenshot everything above and send it to Claude."
 fi

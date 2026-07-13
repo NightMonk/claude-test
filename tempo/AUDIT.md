@@ -25,6 +25,18 @@
 - **Lockout root cause confirmed:** `<input id="passcode" type="password" inputmode="numeric">` — iOS raises the digits-only keypad; the passcode contains letters/symbols. (Desktop ignores `inputmode`, which is why desktop login works today.)
 - Spec conflict & adaptation — see §6.
 
+## 3b. Operational constraints (deploy) — LOAD-BEARING
+
+Recorded per operator instruction; these govern every future phase.
+
+- **Server:** Ubuntu 22.04 on **Oracle Cloud Infrastructure** (Always-Free VM.Standard.E2.1.Micro, uk-london-1), Caddy + systemd, at `tempo.falkconsulting.co.uk` (`144.21.51.57`).
+- **Operator is iPhone-only** for the foreseeable term (no desktop for ~1 month). No SSH client on the device; the SSH **private key exists only on the operator's Windows PC** (generated there via `ssh-keygen`), not on any phone and not in Claude's environment.
+- **Claude cannot SSH to the server:** its sandbox has no private key (`~/.ssh` empty) and outbound port 22 is blocked (HTTPS-only egress via proxy). Verified. Claude therefore cannot deploy directly.
+- **OCI Run Command is unavailable** on this Ubuntu image (agent plugin does not run) — not a usable deploy channel.
+- **Therefore ALL deploys MUST be automated / pull-based.** The chosen mechanism is the **pull-based auto-updater** (`deploy/install-autoupdate.sh`): a systemd timer on the server that fetches the branch every 5 minutes and restarts on change. Once installed, Claude ships by pushing to GitHub; the server self-deploys. No inbound access, no secrets, no per-deploy human step.
+- **Bootstrap (one time only):** installing that auto-updater requires exactly one server touch. With SSH and Run Command both unavailable, the only phone-reachable channel is **Oracle Cloud Shell + OCI Bastion** (`deploy/cloudshell-deploy.sh`, run via a single pasted one-liner). Bastion injects ephemeral access through the instance agent, so it needs **no pre-existing key**. This is unavoidable: reaching the server at all currently requires it. After it runs once, the auto-updater makes all further deploys hands-off.
+- **Consequence for phases:** Claude builds, verifies locally (headless browser + API), commits, and pushes each phase. Phases accumulate safely in GitHub and land together on the next auto-update tick. The operator's checklist per phase is browser-only (open the PWA, tap through). No terminal steps are issued to the operator beyond the single one-time bootstrap paste above.
+
 ## 4. Deploys
 
 - I (Claude Code) commit + push to GitHub. The server updates by SSH:
