@@ -53,6 +53,10 @@ db.exec(`
     done          INTEGER NOT NULL DEFAULT 0,
     completed_at  TEXT,
     my_day_date   TEXT,                          -- date it was added to "My Day"; auto-expires
+    someday       INTEGER NOT NULL DEFAULT 0,    -- parked, out of day views + rollover
+    carried_from  TEXT,                          -- original due date, if rolled over
+    rollover_count INTEGER NOT NULL DEFAULT 0,   -- times auto-carried to a new day
+    source        TEXT NOT NULL DEFAULT 'manual',-- manual | note | nlp
     sort          INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -128,6 +132,10 @@ const ensureCol = (table, col, type) => {
   if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
 };
 ensureCol('tasks', 'my_day_date', 'TEXT');
+ensureCol('tasks', 'someday', 'INTEGER NOT NULL DEFAULT 0');
+ensureCol('tasks', 'carried_from', 'TEXT');
+ensureCol('tasks', 'rollover_count', 'INTEGER NOT NULL DEFAULT 0');
+ensureCol('tasks', 'source', "TEXT NOT NULL DEFAULT 'manual'");
 for (const c of ['google_refresh_token', 'google_access_token', 'google_email', 'google_state']) ensureCol('settings', c, 'TEXT');
 ensureCol('settings', 'google_token_expiry', 'INTEGER');
 

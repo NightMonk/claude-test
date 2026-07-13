@@ -509,7 +509,36 @@ button { cursor: pointer; }
   border-radius: var(--r-chip); font-size: var(--fs-4); font-weight: 600; box-shadow: var(--shadow);
   max-width: 90%; text-align: center; animation: toastin .25s ease;
 }
+.toast:not(.hidden):has(.toast-btn) { display: inline-flex; align-items: center; gap: 14px; text-align: left; }
+.toast-btn {
+  border: none; background: transparent; color: var(--accent);
+  font-size: var(--fs-4); font-weight: 750; padding: 2px 4px; white-space: nowrap;
+  filter: brightness(1.6);
+}
+.toast-btn:active { transform: scale(.94); }
 @keyframes toastin { from { opacity: 0; transform: translate(-50%, 8px); } }
+
+/* ---- Phase 2: carried-over, amnesty, completed group, history ---- */
+.meta-chip.carried { color: var(--ink-3); font-weight: 650; font-style: italic; }
+.amnesty {
+  margin: 8px 0 0; padding: 10px 12px; margin-left: 34px;
+  background: var(--surface-2); border: 1px dashed var(--line); border-radius: var(--r-ctl);
+  font-size: var(--fs-5); color: var(--ink-2);
+}
+.amnesty > span { display: block; margin-bottom: 8px; }
+.amnesty-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.mini-btn.amnesty-del { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+
+.completed-head {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  margin: 16px 0 4px; padding: 8px 4px; border: none; background: transparent;
+  color: var(--ink-3); font-size: var(--fs-5); font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; cursor: pointer;
+}
+.completed-head .chev { font-size: var(--fs-4); }
+
+.archive-actions { align-items: center; }
+.archive-when { font-size: var(--fs-5); color: var(--ink-3); margin-right: auto; }
 .confetti { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
 .confetti span {
   position: absolute; width: 8px; height: 8px; border-radius: 2px; top: 40%;

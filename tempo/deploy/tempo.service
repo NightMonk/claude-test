@@ -9,6 +9,7 @@ After=network.target
 [Service]
 WorkingDirectory=/opt/tempo/repo/tempo
 ExecStart=/usr/bin/node server/index.js
+Environment=TZ=Europe/London
 Restart=on-failure
 RestartSec=3
 User=tempo

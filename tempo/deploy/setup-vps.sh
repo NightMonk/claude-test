@@ -67,6 +67,7 @@ After=network.target
 [Service]
 WorkingDirectory=$APP_DIR
 ExecStart=/usr/bin/node server/index.js
+Environment=TZ=Europe/London
 Restart=on-failure
 RestartSec=3
 User=tempo

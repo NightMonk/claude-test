@@ -1,3 +1,8 @@
+// Default the process timezone to Europe/London before any Date is used, so
+// day-boundary and reminder logic is correct without depending on the host TZ
+// or a systemd unit refresh. An explicit TZ env still wins.
+if (!process.env.TZ) process.env.TZ = 'Europe/London';
+
 // Loads .env into process.env. Imported FIRST (before db/auth) so that modules
 // reading process.env at load time see the values. Tiny parser, no dependency.
 import { readFileSync } from 'node:fs';

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 
 import db from './db.js';
 import { issueToken, checkPasscode, requireAuth } from './auth.js';
-import tasksRouter from './routes/tasks.js';
+import tasksRouter, { reconcileRollover } from './routes/tasks.js';
 import goalsRouter from './routes/goals.js';
 import listsRouter from './routes/lists.js';
 import calendarRouter, { syncCalendar, startCalendarRefresh } from './routes/calendar.js';
@@ -139,6 +139,9 @@ app.use(express.static(join(__dirname, '..', 'public')));
 initPush();
 startReminderLoop();
 startCalendarRefresh();
+// Midnight rollover (Europe/London): reconcile at boot, then check every 15 min.
+reconcileRollover();
+setInterval(() => { try { reconcileRollover(); } catch { /* keep serving */ } }, 15 * 60 * 1000);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Tempo running on http://localhost:${PORT}`));

@@ -13,7 +13,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 let TOKEN = localStorage.getItem('tempo_token') || '';
-const state = { tab: 'today', lists: [], goals: [], sub: null, calMode: 'month', calDate: new Date(), calSel: todayStr(), todayFilter: 'all', settings: {} };
+const state = { tab: 'today', lists: [], goals: [], sub: null, calMode: 'month', calDate: new Date(), calSel: todayStr(), todayFilter: 'all', settings: {}, completedOpen: false };
 const expanded = new Set();       // task ids showing their sub-tasks
 const notified = new Set();       // reminder ids already fired this session
 
@@ -71,6 +71,7 @@ async function boot() {
   showApp();
   await refreshMeta();
   applyTheme();
+  api('POST', '/tasks/reconcile', { today: todayStr() }).catch(() => {}); // carry overdue → today on open
   if (new URLSearchParams(location.search).get('google') === 'connected') {
     history.replaceState(null, '', '/');
     state.sub = { type: 'settings' }; toast('Google Calendar connected ✓');
@@ -123,6 +124,16 @@ let toastTimer;
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 2200);
+}
+// Toast with an inline action button (e.g. Undo). Auto-hides after `ms`.
+function toastAction(msg, label, fn, ms = 5000) {
+  const t = $('#toast'); t.innerHTML = '';
+  t.appendChild(el(`<span>${esc(msg)}</span>`));
+  const b = el(`<button class="toast-btn">${esc(label)}</button>`);
+  b.addEventListener('click', () => { t.classList.add('hidden'); clearTimeout(toastTimer); fn(); });
+  t.appendChild(b);
+  t.classList.remove('hidden');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.classList.add('hidden'); t.textContent = ''; }, ms);
 }
 function celebrate() {
   const box = $('#confetti'); box.innerHTML = ''; box.classList.remove('hidden');
@@ -187,6 +198,10 @@ function taskCard(task) {
   const meta = [];
   const dl = dueLabel(task);
   if (dl) meta.push(`<span class="meta-chip ${dueState(task)}">🗓 ${esc(dl)}</span>`);
+  if (task.carried_from && !task.done) {
+    const wd = parseYmd(task.carried_from).toLocaleDateString(undefined, { weekday: 'short' });
+    meta.push(`<span class="meta-chip carried">↩ Carried over · was ${esc(wd)}</span>`);
+  }
   if (inMyDay && !task.done) meta.push(`<span class="meta-chip myday-chip">◎ My Day</span>`);
   if (list) meta.push(`<span class="meta-chip"><i class="list-dot" style="background:${esc(list.color)}"></i>${esc(list.name)}</span>`);
   if (task.energy) meta.push(`<span class="meta-chip">${ENERGY[task.energy] || ''}</span>`);
@@ -209,6 +224,16 @@ function taskCard(task) {
     </div>` : ''}
   </div>`);
 
+  // Amnesty: after 3 carries, offer a gentle way out — never a guilt pile.
+  if (!task.done && (task.rollover_count || 0) >= 3) {
+    card.appendChild(el(`<div class="amnesty">
+      <span>Carried ${task.rollover_count}× — still want it?</span>
+      <div class="amnesty-btns">
+        <button class="mini-btn" data-amnesty="reschedule" data-id="${task.id}">Reschedule</button>
+        <button class="mini-btn" data-amnesty="someday" data-id="${task.id}">Someday</button>
+        <button class="mini-btn amnesty-del" data-amnesty="delete" data-id="${task.id}">Delete</button>
+      </div></div>`));
+  }
   if (expanded.has(task.id)) card.appendChild(renderSubs(task));
   if (!task.done && !task.parent_id) attachSwipe(card, task);
   return card;
@@ -281,6 +306,8 @@ async function render() {
     if (state.sub?.type === 'list') return renderListDetail(state.sub.id);
     if (state.sub?.type === 'goal') return renderGoalDetail(state.sub.id);
     if (state.sub?.type === 'inbox') return renderInbox();
+    if (state.sub?.type === 'someday') return renderSomeday();
+    if (state.sub?.type === 'archive') return renderArchive();
     if (state.sub?.type === 'settings') return renderSettings();
     if (state.tab === 'today') return renderToday();
     if (state.tab === 'calendar') return renderCalendar();
@@ -345,29 +372,26 @@ async function renderToday() {
     || (state.todayFilter === 'quick' && t.estimate_min && t.estimate_min <= 15)
     || (state.todayFilter === 'low' && t.energy === 'low');
 
-  const overdue = tasks.filter((t) => dueState(t) === 'overdue' && passFilter(t));
-  if (overdue.length) {
-    const roll = el(`<div class="section-label" style="display:flex;justify-content:space-between;align-items:center">
-      <span>Carried over (${overdue.length})</span>
-      <button class="mini-btn" id="rollover">Move all to today</button></div>`);
-    v.appendChild(roll);
-    $('#rollover', roll).addEventListener('click', async () => {
-      await api('POST', '/tasks/rollover', { to: todayStr() }); toast('Moved to today — fresh start'); render();
-    });
-    overdue.forEach((t) => v.appendChild(taskCard(t)));
-  }
+  // Sort (Phase 2.2): carried-over first (4.2), then priority ↓, timed ↑ (untimed
+  // last), then manual order. Overdue no longer needs its own section — the server
+  // reconcile has already carried it to today with a badge.
+  const timeKey = (t) => (t.has_time && String(t.due_at).includes('T')) ? t.due_at.split('T')[1] : '~';
+  const cmp = (a, b) => (b.priority - a.priority) || timeKey(a).localeCompare(timeKey(b)) || (a.sort - b.sort) || (a.id - b.id);
+  const open = tasks.filter(passFilter);
+  const ordered = [...open.filter((t) => t.carried_from).sort(cmp), ...open.filter((t) => !t.carried_from).sort(cmp)];
 
-  const rest = tasks.filter((t) => dueState(t) !== 'overdue' && passFilter(t));
   v.appendChild(el(`<div class="section-label">Today</div>`));
-  if (!rest.length && !overdue.length) {
+  if (!ordered.length) {
     const msg = state.todayFilter !== 'all' ? 'Nothing matches that filter right now.' : 'You have a free day.<br><span class="muted">Take it easy — or tap ＋ to add something.</span>';
     v.appendChild(el(`<div class="empty"><span class="big">🌿</span>${msg}</div>`));
   }
-  rest.forEach((t) => v.appendChild(taskCard(t)));
+  ordered.forEach((t) => v.appendChild(taskCard(t)));
 
+  // Completed today — collapsible group at the bottom of the day.
   if (doneToday.length) {
-    v.appendChild(el(`<div class="section-label">✓ Done today · your wins</div>`));
-    doneToday.forEach((t) => v.appendChild(taskCard(t)));
+    const openC = state.completedOpen;
+    v.appendChild(el(`<button class="completed-head" data-completed-toggle><span>✓ Completed today (${doneToday.length})</span><span class="chev">${openC ? '▾' : '▸'}</span></button>`));
+    if (openC) doneToday.forEach((t) => v.appendChild(taskCard(t)));
   }
 }
 
@@ -393,11 +417,12 @@ async function renderGoals() {
 
 async function renderLists() {
   $('#title').textContent = 'Lists';
-  const [lists, inbox] = await Promise.all([api('GET', '/lists'), api('GET', '/tasks?bucket=inbox')]);
+  const [lists, inbox, someday] = await Promise.all([api('GET', '/lists'), api('GET', '/tasks?bucket=inbox'), api('GET', '/tasks?bucket=someday')]);
   state.lists = lists;
   const v = $('#view'); v.innerHTML = '';
   v.appendChild(el(`<div class="list-row" data-searchopen style="color:var(--ink-2)"><span class="list-emoji">🔍</span><span class="list-name">Search</span></div>`));
   v.appendChild(el(`<div class="list-row" data-inboxopen><span class="list-emoji">📥</span><span class="list-name">Inbox</span><span class="list-count">${inbox.length}</span></div>`));
+  v.appendChild(el(`<div class="list-row" data-somedayopen><span class="list-emoji">🌙</span><span class="list-name">Someday</span><span class="list-count">${someday.length}</span></div>`));
   v.appendChild(el(`<div class="section-label">Your lists</div>`));
   for (const l of lists) {
     v.appendChild(el(`<div class="list-row" data-listopen="${l.id}">
@@ -431,6 +456,70 @@ async function renderInbox() {
   v.appendChild(el(`<div class="greet">Undated captures. Give each a home — or plan them all at once.</div>`));
   v.appendChild(el(`<div class="today-actions"><button class="pill-action" data-plan>🗂 Plan these now</button></div>`));
   tasks.forEach((t) => v.appendChild(taskCard(t)));
+}
+
+async function renderSomeday() {
+  $('#title').textContent = '🌙 Someday';
+  const tasks = await api('GET', '/tasks?bucket=someday');
+  const v = $('#view'); v.innerHTML = '';
+  if (!tasks.length) { v.appendChild(el(`<div class="empty"><span class="big">🌙</span>Nothing parked here.<br><span class="muted">Someday holds ideas without a deadline — no pressure, no guilt.</span></div>`)); return; }
+  v.appendChild(el(`<div class="greet">Ideas without a deadline. Pull one into My Day when you're ready.</div>`));
+  tasks.forEach((t) => {
+    const card = taskCard(t);
+    // Give each Someday task a one-tap way back into the day.
+    card.querySelector('.task-actions')?.appendChild(el(`<button class="mini-btn" data-somedayto="${t.id}">◎ Move to My Day</button>`));
+    v.appendChild(card);
+  });
+}
+
+// History: every completed task, grouped by when it was finished. Restore pulls
+// one back into today. This is also where a mistaken "done" tap is undone later.
+async function renderArchive() {
+  $('#title').textContent = '🗂 History';
+  const all = await api('GET', '/tasks?bucket=archive');
+  const v = $('#view'); v.innerHTML = '';
+  v.appendChild(el(`<div class="list-row" data-archivesearch style="color:var(--ink-2)"><span class="list-emoji">🔍</span><span class="list-name">Search completed…</span></div>`));
+  if (!all.length) { v.appendChild(el(`<div class="empty"><span class="big">🗂</span>No completed tasks yet.<br><span class="muted">Finished tasks gather here — you can always restore one.</span></div>`)); return; }
+
+  const q = (state.sub?.q || '').toLowerCase();
+  const tasks = q ? all.filter((t) => (t.title || '').toLowerCase().includes(q)) : all;
+  v.appendChild(el(`<div class="greet">${tasks.length} completed${q ? ` matching “${esc(state.sub.q)}”` : ''}. Tap a task to reopen, or Restore to bring it back to today.</div>`));
+
+  // Bucket by completion recency (Europe/London day boundaries via the client's
+  // local day, which the server already aligns to London).
+  const today = parseYmd(todayStr());
+  const startOfWeek = new Date(today); const ws = state.settings.week_start || 1;
+  startOfWeek.setDate(today.getDate() - ((today.getDay() - ws + 7) % 7));
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const groups = [
+    { label: 'Today', items: [] },
+    { label: 'This week', items: [] },
+    { label: 'This month', items: [] },
+    { label: 'Earlier', items: [] },
+  ];
+  for (const t of tasks) {
+    const c = t.completed_at ? new Date(t.completed_at) : null;
+    if (!c) { groups[3].items.push(t); continue; }
+    const cd = parseYmd(ymd(c));
+    if (cd.getTime() === today.getTime()) groups[0].items.push(t);
+    else if (cd >= startOfWeek) groups[1].items.push(t);
+    else if (cd >= startOfMonth) groups[2].items.push(t);
+    else groups[3].items.push(t);
+  }
+  for (const g of groups) {
+    if (!g.items.length) continue;
+    v.appendChild(el(`<div class="section-label">${g.label} · ${g.items.length}</div>`));
+    for (const t of g.items) {
+      const card = taskCard(t);
+      // Completed cards have no action row — add a Restore control.
+      const stamp = t.completed_at ? new Date(t.completed_at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+      card.appendChild(el(`<div class="task-actions archive-actions">
+        ${stamp ? `<span class="archive-when">✓ ${esc(stamp)}</span>` : ''}
+        <button class="mini-btn" data-restore="${t.id}">↩ Restore</button>
+      </div>`));
+      v.appendChild(card);
+    }
+  }
 }
 
 async function renderGoalDetail(id) {
@@ -1248,10 +1337,29 @@ function openSearch() {
   });
 }
 
+// Filter the History view in place. Kept simple: type, and the archive list
+// re-renders filtered by title.
+function openArchiveSearch() {
+  $('#sheet-body').innerHTML = `<h2>Search completed</h2>
+    <input class="capture-input" id="aq" placeholder="Find a finished task…" autocomplete="off" value="${esc(state.sub?.q || '')}" />
+    <div class="sheet-actions"><button class="btn-primary" id="aq-go">Search</button>
+      ${state.sub?.q ? '<button class="btn-ghost" id="aq-clear">Clear</button>' : ''}</div>`;
+  openSheet();
+  const input = $('#aq'); setTimeout(() => input.focus(), 60);
+  const go = () => { state.sub = { type: 'archive', q: input.value.trim() }; closeSheet(); render(); };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  $('#aq-go').addEventListener('click', go);
+  $('#aq-clear')?.addEventListener('click', () => { state.sub = { type: 'archive' }; closeSheet(); render(); });
+}
+
 // ---------------------------------------------------------------- task interactions
 async function toggleTask(id, celebrateIt) {
   const { task, spawned } = await api('POST', `/tasks/${id}/toggle`);
-  if (task.done && celebrateIt !== false) { celebrate(); toast(spawned ? 'Done ✓ — next one scheduled 🔁' : encourage()); }
+  if (task.done && celebrateIt !== false) {
+    celebrate();
+    if (spawned) toast('Done ✓ — next one scheduled 🔁');
+    else toastAction(encourage(), 'Undo', async () => { await api('POST', `/tasks/${id}/toggle`); refreshMeta().then(render); });
+  }
   refreshMeta().then(render);
 }
 function encourage() { const m = ['Done ✓', 'Nice one ✓', 'That\'s a win ✓', 'Momentum 🎉', 'Ticked off ✓']; return m[Math.floor(Math.random() * m.length)]; }
@@ -1262,6 +1370,8 @@ $('#view').addEventListener('click', async (e) => {
   const goalOpen = t.closest('[data-goalopen]'); if (goalOpen) { state.sub = { type: 'goal', id: Number(goalOpen.dataset.goalopen) }; return render(); }
   const listOpen = t.closest('[data-listopen]'); if (listOpen) { state.sub = { type: 'list', id: Number(listOpen.dataset.listopen) }; return render(); }
   if (t.closest('[data-inboxopen]')) { state.sub = { type: 'inbox' }; return render(); }
+  if (t.closest('[data-somedayopen]')) { state.sub = { type: 'someday' }; return render(); }
+  if (t.closest('[data-archivesearch]')) return openArchiveSearch();
   if (t.closest('[data-searchopen]')) return openSearch();
   const btn = t.closest('button'); if (!btn) { const ttl = t.closest('[data-edit]'); if (ttl) openTaskEditorById(Number(ttl.dataset.edit)); return; }
 
@@ -1284,6 +1394,16 @@ $('#view').addEventListener('click', async (e) => {
   else if (btn.dataset.filter) { state.todayFilter = btn.dataset.filter; render(); }
   else if (btn.dataset.daynav) { const k = btn.dataset.daynav; if (k === todayStr()) { render(); } else { state.tab = 'calendar'; state.calMode = 'day'; state.calSel = k; state.sub = null; render(); } }
   else if (btn.dataset.myday) { const id = Number(btn.dataset.myday); await api('PATCH', '/tasks/' + id, { my_day_date: btn.dataset.on === '1' ? null : todayStr() }); toast(btn.dataset.on === '1' ? 'Removed from My Day' : 'Added to My Day ◎'); render(); }
+  else if (btn.hasAttribute('data-completed-toggle')) { state.completedOpen = !state.completedOpen; render(); }
+  else if (btn.dataset.amnesty) {
+    const id = Number(btn.dataset.id);
+    if (btn.dataset.amnesty === 'reschedule') return openTaskEditorById(id);
+    if (btn.dataset.amnesty === 'someday') { await api('PATCH', '/tasks/' + id, { someday: 1, due_at: null, my_day_date: null }); toast('Parked in Someday 🌙'); }
+    if (btn.dataset.amnesty === 'delete') { await api('DELETE', '/tasks/' + id); toast('Deleted'); }
+    render();
+  }
+  else if (btn.dataset.restore) { await api('POST', `/tasks/${btn.dataset.restore}/restore`); toast('Restored — due today'); render(); }
+  else if (btn.dataset.somedayto) { await api('PATCH', '/tasks/' + btn.dataset.somedayto, { someday: 0, my_day_date: todayStr() }); toast('Moved to My Day ◎'); render(); }
 });
 // add sub-task via inline input (Enter)
 $('#view').addEventListener('keydown', async (e) => {
@@ -1309,6 +1429,7 @@ $('#more-btn').addEventListener('click', () => {
     <div class="menu-list">
       <button class="menu-item" id="m-search">🔍 <span>Search tasks</span></button>
       <button class="menu-item" id="m-review">📋 <span>Weekly review</span></button>
+      <button class="menu-item" id="m-history">🗂 <span>History (completed)</span></button>
       <button class="menu-item" id="m-goal">◈ <span>New goal</span></button>
       <button class="menu-item" id="m-settings">⚙️ <span>Settings</span></button>
       <button class="menu-item" id="m-logout" style="color:var(--danger)">⎋ <span>Log out</span></button>
@@ -1316,6 +1437,7 @@ $('#more-btn').addEventListener('click', () => {
   openSheet();
   $('#m-search').addEventListener('click', openSearch);
   $('#m-review').addEventListener('click', () => { closeSheet(); openReview(); });
+  $('#m-history').addEventListener('click', () => { closeSheet(); state.sub = { type: 'archive' }; render(); });
   $('#m-goal').addEventListener('click', () => openGoalEditor());
   $('#m-settings').addEventListener('click', () => { closeSheet(); state.sub = { type: 'settings' }; render(); });
   $('#m-logout').addEventListener('click', logout);
