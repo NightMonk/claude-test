@@ -161,7 +161,7 @@ button { cursor: pointer; }
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
   max-width: 680px; margin: 0 auto;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: saturate(1.4) blur(12px);
   border-top: 1px solid var(--line);
@@ -382,6 +382,23 @@ button { cursor: pointer; }
 .cap-step .se-dot { width: 18px; height: 18px; border-radius: var(--r-chip); border: 2px dashed var(--line); flex: none; }
 .cap-step .se-del { color: var(--ink-3); background: none; border: none; font-size: var(--fs-3); }
 .cap-actions .btn-ghost { flex: none; }
+
+/* ---- Phase 4: Upcoming (Next 7 Days) agenda ---- */
+.up-day { margin-bottom: 18px; }
+.up-day.is-today .up-label { color: var(--accent); }
+.up-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 2px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
+}
+.up-label { font-size: var(--fs-3); font-weight: 750; color: var(--ink); }
+.up-date { font-size: var(--fs-5); color: var(--ink-3); font-weight: 600; }
+.up-add {
+  width: 30px; height: 30px; border-radius: var(--r-chip); border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--ink-2); font-size: var(--fs-3); line-height: 1; flex: none;
+}
+.up-add:active { transform: scale(.92); }
+.up-empty { color: var(--ink-3); font-size: var(--fs-5); padding: 4px 2px 2px; }
+.up-inbox { margin-top: 6px; }
 
 /* ---- focus mode ---- */
 .focus-overlay {

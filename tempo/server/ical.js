@@ -67,10 +67,12 @@ export function expandEvents(events, fromStr, toStr) {
   for (const ev of events) {
     const base = new Date(ev.start.length <= 10 ? ev.start + 'T00:00:00' : ev.start);
     const durMs = ev.end ? (new Date(ev.end.length <= 10 ? ev.end + 'T00:00:00' : ev.end) - base) : 0;
+    // DB rows use snake_case `all_day`; tolerate camelCase too for safety.
+    const allDay = ev.all_day ?? ev.allDay;
     const push = (startDate) => {
-      const iso = ev.allDay ? isoDate(startDate) : isoLocal(startDate);
-      const endIso = ev.end ? (ev.allDay ? isoDate(new Date(startDate.getTime() + durMs)) : isoLocal(new Date(startDate.getTime() + durMs))) : null;
-      out.push({ title: ev.title || '(untitled)', start: iso, end: endIso, all_day: ev.allDay, calendar_id: ev.calendar_id, color: ev.color });
+      const iso = allDay ? isoDate(startDate) : isoLocal(startDate);
+      const endIso = ev.end ? (allDay ? isoDate(new Date(startDate.getTime() + durMs)) : isoLocal(new Date(startDate.getTime() + durMs))) : null;
+      out.push({ title: ev.title || '(untitled)', start: iso, end: endIso, all_day: allDay, calendar_id: ev.calendar_id, color: ev.color });
     };
     if (!ev.rrule) {
       if (base <= to && new Date(base.getTime() + durMs) >= from) push(base);

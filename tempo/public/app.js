@@ -310,6 +310,7 @@ async function render() {
     if (state.sub?.type === 'archive') return renderArchive();
     if (state.sub?.type === 'settings') return renderSettings();
     if (state.tab === 'today') return renderToday();
+    if (state.tab === 'upcoming') return renderUpcoming();
     if (state.tab === 'calendar') return renderCalendar();
     if (state.tab === 'goals') return renderGoals();
     if (state.tab === 'lists') return renderLists();
@@ -334,9 +335,10 @@ function weekStrip() {
 
 async function renderToday() {
   $('#title').textContent = 'My Day';
-  const [tasks, doneToday] = await Promise.all([
+  const [tasks, doneToday, events] = await Promise.all([
     api('GET', '/tasks?bucket=today&today=' + todayStr()),
     api('GET', '/tasks?bucket=done_today&today=' + todayStr()),
+    getEvents(todayStr(), todayStr()),
   ]);
   const v = $('#view'); v.innerHTML = '';
   const total = tasks.length + doneToday.length;
@@ -349,9 +351,20 @@ async function renderToday() {
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   v.appendChild(el(`<div class="greet">${greet} — ${new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>`));
+  const leftBits = [];
+  if (tasks.length) leftBits.push(`about <span class="accent">${mins ? Math.round(mins / 60 * 10) / 10 + 'h' : 'a bit'}</span> of tasks left`);
+  if (events.length) leftBits.push(`${events.length} event${events.length > 1 ? 's' : ''} on your calendar`);
+  const subLine = total === 0 && !events.length ? 'A clear page. Add something small.'
+    : (leftBits.length ? leftBits.join(' · ') : 'All done. Lovely. 🎉');
   v.appendChild(el(`<div class="momentum">${ring(52, 6, pct, 'var(--ok)')}
     <div><b>${done} of ${total || 0} done today</b>
-    <div class="sub">${total === 0 ? 'A clear page. Add something small.' : (tasks.length ? `about <span class="accent">${mins ? Math.round(mins / 60 * 10) / 10 + 'h' : 'a bit'}</span> of tasks left` : 'All done. Lovely. 🎉')}</div></div></div>`));
+    <div class="sub">${subLine}</div></div></div>`));
+
+  // Today's calendar events, folded into the day (My Day polish 4.2).
+  if (events.length) {
+    v.appendChild(el(`<div class="section-label">On your calendar</div>`));
+    [...events].sort((a, b) => (a.all_day ? '' : a.start).localeCompare(b.all_day ? '' : b.start)).forEach((e) => v.appendChild(el(eventChip(e))));
+  }
 
   // Signature actions: plan the day, or let Tempo choose one to beat choice paralysis.
   const actions = el(`<div class="today-actions">
@@ -376,7 +389,8 @@ async function renderToday() {
   // last), then manual order. Overdue no longer needs its own section — the server
   // reconcile has already carried it to today with a badge.
   const timeKey = (t) => (t.has_time && String(t.due_at).includes('T')) ? t.due_at.split('T')[1] : '~';
-  const cmp = (a, b) => (b.priority - a.priority) || timeKey(a).localeCompare(timeKey(b)) || (a.sort - b.sort) || (a.id - b.id);
+  const byTime = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+  const cmp = (a, b) => (b.priority - a.priority) || byTime(timeKey(a), timeKey(b)) || (a.sort - b.sort) || (a.id - b.id);
   const open = tasks.filter(passFilter);
   const ordered = [...open.filter((t) => t.carried_from).sort(cmp), ...open.filter((t) => !t.carried_from).sort(cmp)];
 
@@ -393,6 +407,53 @@ async function renderToday() {
     v.appendChild(el(`<button class="completed-head" data-completed-toggle><span>✓ Completed today (${doneToday.length})</span><span class="chev">${openC ? '▾' : '▸'}</span></button>`));
     if (openC) doneToday.forEach((t) => v.appendChild(taskCard(t)));
   }
+}
+
+// Any.do-style agenda for the next seven days (4.1). One section per day —
+// Today, Tomorrow, then weekdays — each with its tasks and calendar events, and
+// a ＋ to drop something straight onto that day. Undated captures sit in Inbox.
+async function renderUpcoming() {
+  $('#title').textContent = 'Upcoming';
+  const start = parseYmd(todayStr());
+  const end = new Date(start); end.setDate(start.getDate() + 6);
+  const tomorrow = new Date(start); tomorrow.setDate(start.getDate() + 1);
+  const [todayTasks, rangeTasks, events, inbox] = await Promise.all([
+    api('GET', '/tasks?bucket=today&today=' + todayStr()),
+    api('GET', `/tasks?from=${ymd(tomorrow)}&to=${ymd(end)}`),
+    getEvents(todayStr(), ymd(end)),
+    api('GET', '/tasks?bucket=inbox'),
+  ]);
+  const v = $('#view'); v.innerHTML = '';
+  const emap = byDate(events, 'start');
+  const rmap = byDate(rangeTasks);
+  // Plain string compare, not localeCompare — the latter's punctuation weighting
+  // would sort the untimed "~" sentinel before real times.
+  const timeKey = (t) => (t.has_time && String(t.due_at).includes('T')) ? t.due_at.split('T')[1] : '~';
+  const byTime = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+  const cmp = (a, b) => byTime(timeKey(a), timeKey(b)) || (b.priority - a.priority) || (a.sort - b.sort) || (a.id - b.id);
+
+  const ahead = todayTasks.filter((t) => !t.done).length + rangeTasks.filter((t) => !t.done).length;
+  v.appendChild(el(`<div class="greet">Next 7 days · ${ahead} task${ahead !== 1 ? 's' : ''} ahead</div>`));
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const k = ymd(d);
+    const isToday = i === 0;
+    const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString(undefined, { weekday: 'long' });
+    const dayTasks = (isToday ? todayTasks.filter((t) => !t.done) : (rmap[k] || []).filter((t) => !t.done)).sort(cmp);
+    const evs = (emap[k] || []).slice().sort((a, b) => (a.all_day ? '' : a.start).localeCompare(b.all_day ? '' : b.start));
+
+    const section = el(`<div class="up-day ${isToday ? 'is-today' : ''}"></div>`);
+    section.appendChild(el(`<div class="up-head" data-addday="${k}">
+      <div><span class="up-label">${label}</span> <span class="up-date">${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}</span></div>
+      <button class="up-add" data-addday="${k}" aria-label="Add to ${esc(label)}">＋</button></div>`));
+    evs.forEach((e) => section.appendChild(el(eventChip(e))));
+    dayTasks.forEach((t) => section.appendChild(taskCard(t)));
+    if (!dayTasks.length && !evs.length) section.appendChild(el(`<div class="up-empty">Nothing planned</div>`));
+    v.appendChild(section);
+  }
+
+  if (inbox.length) v.appendChild(el(`<div class="list-row up-inbox" data-inboxopen><span class="list-emoji">📥</span><span class="list-name">Inbox — undated captures</span><span class="list-count">${inbox.length}</span></div>`));
 }
 
 async function renderGoals() {
@@ -976,7 +1037,7 @@ function parseDateFallback(title) {
   return { title, due_at: due, has_time: hasTime ? 1 : 0 };
 }
 
-function openCapture() {
+function openCapture(opts = {}) {
   const body = $('#sheet-body');
   body.innerHTML = `<h2 class="cap-h">I want to…</h2>
     <input class="capture-input" id="cap" placeholder="e.g. Call dentist tomorrow 3pm !high" autocomplete="off" />
@@ -994,10 +1055,14 @@ function openCapture() {
     </div>`;
   openSheet();
   const input = $('#cap'); const hint = $('#cap-hint');
-  let forceList = null, forceDue = null, myDay = false;
+  // Presets let a caller (e.g. Upcoming's per-day ＋) drop a task onto a date.
+  let forceList = opts.list ?? null, forceDue = opts.due ?? null, myDay = !!opts.myDay;
   let steps = [];        // inline subtasks captured before saving
   let stepsShown = false;
-  setTimeout(() => input.focus(), 60);
+  if (myDay) $('[data-q="myday"]').classList.add('on');
+  if (forceDue && forceDue === ymd(new Date(Date.now() + 86400000))) $('[data-q="tomorrow"]').classList.add('on');
+  if (forceList) $(`[data-ql="${forceList}"]`)?.classList.add('on');
+  setTimeout(() => { input.focus(); preview(); }, 60);
   const preview = () => {
     const p = parseQuick(input.value);
     const bits = [];
@@ -1497,6 +1562,8 @@ $('#view').addEventListener('click', async (e) => {
   const listOpen = t.closest('[data-listopen]'); if (listOpen) { state.sub = { type: 'list', id: Number(listOpen.dataset.listopen) }; return render(); }
   if (t.closest('[data-inboxopen]')) { state.sub = { type: 'inbox' }; return render(); }
   if (t.closest('[data-somedayopen]')) { state.sub = { type: 'someday' }; return render(); }
+  const addDay = t.closest('[data-addday]');
+  if (addDay) { const k = addDay.dataset.addday; return k === todayStr() ? openCapture({ myDay: true }) : openCapture({ due: k }); }
   if (t.closest('[data-archivesearch]')) return openArchiveSearch();
   if (t.closest('[data-searchopen]')) return openSearch();
   const btn = t.closest('button'); if (!btn) { const ttl = t.closest('[data-edit]'); if (ttl) openTaskEditorById(Number(ttl.dataset.edit)); return; }
