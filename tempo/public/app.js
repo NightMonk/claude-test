@@ -13,7 +13,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 let TOKEN = localStorage.getItem('tempo_token') || '';
-const state = { tab: 'today', lists: [], goals: [], sub: null, calMode: 'month', calDate: new Date(), calSel: todayStr(), todayFilter: 'all', settings: {}, completedOpen: false };
+const state = { tab: 'today', lists: [], goals: [], sub: null, calMode: 'month', calDate: new Date(), calSel: todayStr(), todayFilter: 'all', settings: {}, completedOpen: false, aiEnabled: false };
 const expanded = new Set();       // task ids showing their sub-tasks
 const notified = new Set();       // reminder ids already fired this session
 
@@ -79,7 +79,11 @@ async function boot() {
   render();
 }
 async function refreshMeta() {
-  [state.lists, state.goals, state.settings] = await Promise.all([api('GET', '/lists'), api('GET', '/goals'), api('GET', '/settings')]);
+  const [lists, goals, settings, ai] = await Promise.all([
+    api('GET', '/lists'), api('GET', '/goals'), api('GET', '/settings'),
+    api('GET', '/ai/status').catch(() => ({ configured: false })),
+  ]);
+  state.lists = lists; state.goals = goals; state.settings = settings; state.aiEnabled = !!ai.configured;
 }
 // Three themes (Phase 1). Legacy values (auto/light/dark) map to Graphite.
 const THEMES = [
@@ -606,6 +610,29 @@ async function renderGoalDetail(id) {
   $('#edit-goal').addEventListener('click', () => openGoalEditor(g));
 }
 function dueLabelFromDate(s) { const d = parseYmd(s); return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`; }
+
+// Build a Google Calendar "add event" URL from a task. Pure client — no OAuth,
+// no server setup; just opens a pre-filled Google Calendar page.
+function gcalUrl(task) {
+  const enc = encodeURIComponent;
+  let dates;
+  if (task.has_time && String(task.due_at).includes('T')) {
+    const [d, hm] = task.due_at.split('T');
+    const base = parseYmd(d); const [h, m] = hm.split(':').map(Number);
+    const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m);
+    const end = new Date(start.getTime() + (task.estimate_min || 30) * 60000);
+    const fmt = (dt) => `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`;
+    dates = `${fmt(start)}/${fmt(end)}`;
+  } else {
+    const d = parseYmd(task.due_at); const next = new Date(d); next.setDate(d.getDate() + 1);
+    const fmtD = (dt) => `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}`;
+    dates = `${fmtD(d)}/${fmtD(next)}`; // all-day span
+  }
+  const params = ['action=TEMPLATE', `text=${enc(task.title || 'Task')}`, `dates=${dates}`];
+  if (task.notes) params.push(`details=${enc(task.notes)}`);
+  if (task.location) params.push(`location=${enc(task.location)}`);
+  return 'https://calendar.google.com/calendar/render?' + params.join('&');
+}
 
 // ---------------------------------------------------------------- settings
 async function renderSettings() {
@@ -1153,15 +1180,51 @@ function openTaskEditor(task, defaults = {}) {
       <span class="te-crumb">🔒 ${list() ? esc((list().emoji || '') + ' ' + list().name) : 'No list'}</span>
       <button class="te-save" id="te-save">${task ? 'Save' : 'Add'}</button>
     </div>
-    <input class="te-title" id="te-title" value="${esc(draft.title || '')}" placeholder="What needs doing?" />
+    <div class="te-title-row">
+      <input class="te-title" id="te-title" value="${esc(draft.title || '')}" placeholder="What needs doing?" />
+      ${state.aiEnabled ? '<button class="te-ai" id="te-ai-title" title="Improve wording">✨</button>' : ''}
+    </div>
     <div class="te-chips" id="te-chips"></div>
     <div class="te-expand" id="te-expand"></div>
-    <div class="te-section">SUBTASKS <span id="te-subcount"></span></div>
+    <div class="te-section">SUBTASKS <span id="te-subcount"></span>
+      ${state.aiEnabled ? '<button class="te-ai-steps" id="te-ai-steps">✨ Suggest steps</button>' : ''}</div>
     <div class="sub-editor" id="te-subs"></div>
     <div class="te-section">NOTES</div>
     <textarea class="te-notes" id="te-notes" placeholder="Add your notes…">${esc(draft.notes || '')}</textarea>
+    <button class="te-gcal" id="te-gcal">📅 Add to Google Calendar</button>
     ${task ? '<button class="te-delete" id="te-del">Delete task</button>' : ''}`;
   openSheet();
+
+  // Google Calendar "add event" link — pure client, needs no server setup.
+  const syncGcalBtn = () => { const b = $('#te-gcal'); if (b) b.classList.toggle('hidden', !draft.due_at); };
+  syncGcalBtn();
+  $('#te-gcal')?.addEventListener('click', () => {
+    if (!draft.due_at) { toast('Give it a date first'); return; }
+    window.open(gcalUrl({ title: $('#te-title').value.trim() || draft.title, due_at: draft.due_at, has_time: draft.has_time, notes: $('#te-notes').value.trim(), estimate_min: draft.estimate_min }), '_blank', 'noopener');
+  });
+
+  // ✨ Improve wording
+  $('#te-ai-title')?.addEventListener('click', async () => {
+    const t = $('#te-title').value.trim(); if (!t) { toast('Type a title first'); return; }
+    const btn = $('#te-ai-title'); btn.disabled = true; btn.classList.add('busy');
+    try { const r = await api('POST', '/ai/rewrite', { title: t }); $('#te-title').value = r.title; draft.title = r.title; toast('Reworded ✨'); }
+    catch (e) { toast(e.message); }
+    finally { btn.disabled = false; btn.classList.remove('busy'); }
+  });
+
+  // ✨ Suggest steps — appends AI subtasks to whatever's there.
+  $('#te-ai-steps')?.addEventListener('click', async () => {
+    const t = $('#te-title').value.trim(); if (!t) { toast('Type a title first'); return; }
+    const btn = $('#te-ai-steps'); btn.disabled = true; btn.textContent = '✨ Thinking…';
+    try {
+      const r = await api('POST', '/ai/breakdown', { title: t, notes: $('#te-notes').value.trim() });
+      const existing = new Set(subs.map((s) => s.title.trim().toLowerCase()));
+      let added = 0;
+      for (const s of r.subtasks || []) { if (!existing.has(s.toLowerCase())) { subs.push({ title: s }); added++; } }
+      drawSubs(); toast(added ? `Added ${added} step${added > 1 ? 's' : ''} ✨` : 'No new steps to add');
+    } catch (e) { toast(e.message); }
+    finally { btn.disabled = false; btn.textContent = '✨ Suggest steps'; }
+  });
 
   const humanDue = () => draft.due_at ? dueLabel({ due_at: draft.due_at, has_time: draft.has_time }) : null;
   const chipDefs = () => [
@@ -1178,6 +1241,7 @@ function openTaskEditor(task, defaults = {}) {
 
   function paintChips() {
     $('#te-chips').innerHTML = chipDefs().map((c) => `<button class="te-chip ${c.on ? 'on' : ''} ${open === c.key ? 'active' : ''}" data-chip="${c.key}">${esc(c.label)}</button>`).join('');
+    syncGcalBtn(); // reveal/hide the Google Calendar link as the date changes
   }
 
   const optRow = (opts, current, attr) => opts.map(([n, val]) =>
@@ -1543,6 +1607,39 @@ function openArchiveSearch() {
   $('#aq-clear')?.addEventListener('click', () => { state.sub = { type: 'archive' }; closeSheet(); render(); });
 }
 
+// ---------------------------------------------------------------- note → tasks (AI)
+function openNoteToTasks() {
+  $('#sheet-body').innerHTML = `<h2>Note → tasks</h2>
+    <p class="muted" style="font-size:13px;margin-top:-6px">Paste a brain-dump, email, or messy note. Tempo pulls out the to-dos — you pick which to keep.</p>
+    <textarea class="te-notes" id="nt-text" placeholder="e.g. Need to book MOT, ring the school about the trip, and finally sort the loft…" style="min-height:120px"></textarea>
+    <div class="sheet-actions"><button class="btn-primary" id="nt-go">✨ Find tasks</button></div>
+    <div id="nt-results"></div>`;
+  openSheet();
+  const input = $('#nt-text'); setTimeout(() => input.focus(), 60);
+  $('#nt-go').addEventListener('click', async () => {
+    const text = input.value.trim(); if (!text) { toast('Paste some text first'); return; }
+    const go = $('#nt-go'); go.disabled = true; go.textContent = '✨ Reading…';
+    try {
+      const { tasks } = await api('POST', '/ai/notes', { text });
+      const box = $('#nt-results');
+      if (!tasks.length) { box.innerHTML = '<p class="muted" style="text-align:center;margin-top:12px">No clear tasks found — try rephrasing.</p>'; return; }
+      box.innerHTML = `<div class="section-label">Found ${tasks.length} — untick any to skip</div>
+        <div class="nt-list">${tasks.map((t, i) => `<label class="nt-item"><input type="checkbox" data-i="${i}" checked><span>${esc(t.title)}${t.notes ? `<br><small class="muted">${esc(t.notes)}</small>` : ''}</span></label>`).join('')}</div>
+        <div class="chips" style="margin:12px 0"><button class="chip-btn" id="nt-myday">◎ Add to My Day</button></div>
+        <div class="sheet-actions"><button class="btn-primary" id="nt-add">Add selected</button></div>`;
+      let myDay = false;
+      $('#nt-myday').addEventListener('click', (e) => { myDay = !myDay; e.target.classList.toggle('on', myDay); });
+      $('#nt-add').addEventListener('click', async () => {
+        const chosen = [...box.querySelectorAll('.nt-item input:checked')].map((c) => tasks[Number(c.dataset.i)]);
+        if (!chosen.length) { toast('Nothing selected'); return; }
+        for (const t of chosen) await api('POST', '/tasks', { title: t.title, notes: t.notes || null, source: 'ai', my_day_date: myDay ? todayStr() : null });
+        closeSheet(); toast(`Added ${chosen.length} task${chosen.length > 1 ? 's' : ''} ✨`); refreshMeta().then(render);
+      });
+    } catch (e) { toast(e.message); }
+    finally { go.disabled = false; go.textContent = '✨ Find tasks'; }
+  });
+}
+
 // ---------------------------------------------------------------- task interactions
 async function toggleTask(id, celebrateIt) {
   const { task, spawned } = await api('POST', `/tasks/${id}/toggle`);
@@ -1621,6 +1718,7 @@ $('#more-btn').addEventListener('click', () => {
   body.innerHTML = `<h2>More</h2>
     <div class="menu-list">
       <button class="menu-item" id="m-search">🔍 <span>Search tasks</span></button>
+      ${state.aiEnabled ? '<button class="menu-item" id="m-note">✨ <span>Note → tasks</span></button>' : ''}
       <button class="menu-item" id="m-review">📋 <span>Weekly review</span></button>
       <button class="menu-item" id="m-history">🗂 <span>History (completed)</span></button>
       <button class="menu-item" id="m-goal">◈ <span>New goal</span></button>
@@ -1629,6 +1727,7 @@ $('#more-btn').addEventListener('click', () => {
     </div>`;
   openSheet();
   $('#m-search').addEventListener('click', openSearch);
+  $('#m-note')?.addEventListener('click', openNoteToTasks);
   $('#m-review').addEventListener('click', () => { closeSheet(); openReview(); });
   $('#m-history').addEventListener('click', () => { closeSheet(); state.sub = { type: 'archive' }; render(); });
   $('#m-goal').addEventListener('click', () => openGoalEditor());

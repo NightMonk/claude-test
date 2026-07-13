@@ -487,6 +487,31 @@ button { cursor: pointer; }
 .te-notes { width: 100%; min-height: 72px; border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 12px; background: var(--bg); resize: vertical; }
 .te-notes:focus { outline: none; border-color: var(--focus); box-shadow: var(--focus-ring); }
 .te-delete { display: block; margin: 24px auto 4px; background: none; border: none; color: var(--danger); font-weight: 650; font-size: var(--fs-4); }
+
+/* ---- Phase 5: AI helpers + Google Calendar link ---- */
+.te-title-row { display: flex; align-items: flex-start; gap: 6px; }
+.te-title-row .te-title { flex: 1; }
+.te-ai {
+  flex: none; margin-top: 6px; width: 38px; height: 38px; border-radius: var(--r-chip);
+  border: 1px solid var(--line); background: var(--surface-2); font-size: var(--fs-3); line-height: 1;
+}
+.te-ai:active { transform: scale(.92); }
+.te-ai.busy, .te-ai:disabled { opacity: .5; }
+.te-ai-steps {
+  margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 650; font-size: var(--fs-5);
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--accent); border-radius: var(--r-sm); padding: 4px 10px;
+}
+.te-ai-steps:disabled { opacity: .6; }
+.te-gcal {
+  display: block; width: 100%; margin: 18px 0 2px; padding: 12px; border-radius: var(--r-ctl);
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2); font-weight: 650; font-size: var(--fs-4);
+}
+.te-gcal:active { transform: scale(.98); }
+
+.nt-list { display: flex; flex-direction: column; gap: 2px; }
+.nt-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 6px; border-bottom: 1px solid var(--line); font-size: var(--fs-4); }
+.nt-item input { margin-top: 3px; width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+.nt-item span { flex: 1; }
 .se-row .se-dot { width: 20px; height: 20px; border-radius: var(--r-chip); border: 2px solid var(--line); flex: none; }
 .se-add .se-dot { border-style: dashed; }
 

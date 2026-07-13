@@ -8,6 +8,7 @@ import { issueToken, checkPasscode, requireAuth } from './auth.js';
 import tasksRouter, { reconcileRollover } from './routes/tasks.js';
 import goalsRouter from './routes/goals.js';
 import listsRouter from './routes/lists.js';
+import aiRouter from './routes/ai.js';
 import calendarRouter, { syncCalendar, startCalendarRefresh } from './routes/calendar.js';
 import { buildICS } from './ical.js';
 import { initPush, publicKey, saveSubscription, removeSubscription, startReminderLoop } from './push.js';
@@ -58,6 +59,7 @@ api.use(requireAuth);
 api.use('/tasks', tasksRouter);
 api.use('/goals', goalsRouter);
 api.use('/lists', listsRouter);
+api.use('/ai', aiRouter);
 api.use('/calendars', calendarRouter);
 
 // Settings (single row). Never leak the private VAPID key.
