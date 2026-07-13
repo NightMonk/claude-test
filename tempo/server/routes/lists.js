@@ -20,7 +20,7 @@ router.post('/', (req, res) => {
   const maxSort = db.prepare('SELECT COALESCE(MAX(sort), 0) AS m FROM lists').get().m;
   const info = db
     .prepare('INSERT INTO lists (name, color, emoji, sort) VALUES (?, ?, ?, ?)')
-    .run(name.trim(), color || '#5b5bd6', emoji || null, maxSort + 1);
+    .run(name.trim(), color || '#5C6470', emoji || null, maxSort + 1);
   res.status(201).json(db.prepare('SELECT * FROM lists WHERE id = ?').get(info.lastInsertRowid));
 });
 

@@ -16,7 +16,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS lists (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
-    color       TEXT NOT NULL DEFAULT '#5b5bd6',
+    color       TEXT NOT NULL DEFAULT '#5C6470',
     emoji       TEXT,
     sort        INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
@@ -28,7 +28,7 @@ db.exec(`
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
     notes       TEXT,
-    color       TEXT NOT NULL DEFAULT '#5b5bd6',
+    color       TEXT NOT NULL DEFAULT '#5C6470',
     target_date TEXT,                            -- ISO date, optional
     done        INTEGER NOT NULL DEFAULT 0,
     sort        INTEGER NOT NULL DEFAULT 0,
@@ -69,7 +69,7 @@ db.exec(`
     feed_token    TEXT,
     vapid_public  TEXT,
     vapid_private TEXT,
-    theme         TEXT NOT NULL DEFAULT 'auto',   -- auto | light | dark
+    theme         TEXT NOT NULL DEFAULT 'graphite', -- graphite | paper | eucalyptus
     week_start    INTEGER NOT NULL DEFAULT 1,      -- 0 Sun, 1 Mon (default Monday)
     quiet_start   TEXT,                            -- "HH:MM" no reminders after
     quiet_end     TEXT,
@@ -87,7 +87,7 @@ db.exec(`
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     name         TEXT NOT NULL,
     url          TEXT NOT NULL,
-    color        TEXT NOT NULL DEFAULT '#8b8fa8',
+    color        TEXT NOT NULL DEFAULT '#5C6470',
     last_synced  TEXT,
     last_error   TEXT,
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
@@ -141,9 +141,9 @@ if (!db.prepare('SELECT 1 FROM settings WHERE id = 1').get()) {
 const listCount = db.prepare('SELECT COUNT(*) AS n FROM lists').get().n;
 if (listCount === 0) {
   const insert = db.prepare('INSERT INTO lists (name, color, emoji, sort) VALUES (?, ?, ?, ?)');
-  insert.run('Inbox', '#8b8fa8', '📥', 0);
-  insert.run('Personal', '#34c88a', '🌱', 1);
-  insert.run('Work', '#5b5bd6', '💼', 2);
+  insert.run('Inbox', '#5C6470', '📥', 0);
+  insert.run('Personal', '#2F6B55', '🌱', 1);
+  insert.run('Work', '#6366F1', '💼', 2);
 }
 
 export default db;

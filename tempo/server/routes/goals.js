@@ -34,7 +34,7 @@ router.post('/', (req, res) => {
   if (!name || !name.trim()) return res.status(400).json({ error: 'A name is required' });
   const info = db
     .prepare('INSERT INTO goals (name, notes, color, target_date) VALUES (?, ?, ?, ?)')
-    .run(name.trim(), notes || null, color || '#5b5bd6', target_date || null);
+    .run(name.trim(), notes || null, color || '#5C6470', target_date || null);
   res.status(201).json(enrich(db.prepare('SELECT * FROM goals WHERE id = ?').get(info.lastInsertRowid)));
 });
 

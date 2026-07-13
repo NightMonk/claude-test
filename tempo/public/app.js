@@ -80,11 +80,42 @@ async function boot() {
 async function refreshMeta() {
   [state.lists, state.goals, state.settings] = await Promise.all([api('GET', '/lists'), api('GET', '/goals'), api('GET', '/settings')]);
 }
+// Three themes (Phase 1). Legacy values (auto/light/dark) map to Graphite.
+const THEMES = [
+  { id: 'graphite', name: 'Graphite' },
+  { id: 'paper', name: 'Warm Paper' },
+  { id: 'eucalyptus', name: 'Eucalyptus' },
+];
+const themeId = () => (THEMES.some((t) => t.id === state.settings.theme) ? state.settings.theme : 'graphite');
 function applyTheme() {
-  const t = state.settings.theme || 'auto';
-  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', t);
+  document.documentElement.setAttribute('data-theme', themeId());
+  // Keep the browser/PWA chrome in step with the theme's background token.
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
 }
+async function setTheme(id) {
+  state.settings.theme = id;
+  applyTheme();
+  api('PATCH', '/settings', { theme: id }).catch(() => {});
+}
+// Quick-switch: long-press the header title to cycle themes while deciding.
+(function themeQuickSwitch() {
+  let timer = null;
+  const el = $('#title');
+  const start = () => {
+    timer = setTimeout(() => {
+      const next = THEMES[(THEMES.findIndex((t) => t.id === themeId()) + 1) % THEMES.length];
+      setTheme(next.id);
+      toast('Theme: ' + next.name);
+      if (state.sub?.type === 'settings') render();
+    }, 550);
+  };
+  const cancel = () => clearTimeout(timer);
+  el.addEventListener('pointerdown', start);
+  el.addEventListener('pointerup', cancel);
+  el.addEventListener('pointerleave', cancel);
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+})();
 const listById = (id) => state.lists.find((l) => l.id === id);
 
 // ---------------------------------------------------------------- toast + celebrate
@@ -95,7 +126,7 @@ function toast(msg) {
 }
 function celebrate() {
   const box = $('#confetti'); box.innerHTML = ''; box.classList.remove('hidden');
-  const colors = ['var(--primary)', 'var(--now)', 'var(--done)', 'var(--warn)'];
+  const colors = ['var(--accent)', 'var(--ok)', 'var(--warn)', 'var(--focus)'];
   for (let i = 0; i < 22; i++) {
     const s = document.createElement('span');
     s.style.left = (44 + Math.random() * 12) + '%';
@@ -291,7 +322,7 @@ async function renderToday() {
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   v.appendChild(el(`<div class="greet">${greet} — ${new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>`));
-  v.appendChild(el(`<div class="momentum">${ring(52, 6, pct, 'var(--done)')}
+  v.appendChild(el(`<div class="momentum">${ring(52, 6, pct, 'var(--ok)')}
     <div><b>${done} of ${total || 0} done today</b>
     <div class="sub">${total === 0 ? 'A clear page. Add something small.' : (tasks.length ? `about <span class="accent">${mins ? Math.round(mins / 60 * 10) / 10 + 'h' : 'a bit'}</span> of tasks left` : 'All done. Lovely. 🎉')}</div></div></div>`));
 
@@ -365,7 +396,7 @@ async function renderLists() {
   const [lists, inbox] = await Promise.all([api('GET', '/lists'), api('GET', '/tasks?bucket=inbox')]);
   state.lists = lists;
   const v = $('#view'); v.innerHTML = '';
-  v.appendChild(el(`<div class="list-row" data-searchopen style="color:var(--ink-soft)"><span class="list-emoji">🔍</span><span class="list-name">Search</span></div>`));
+  v.appendChild(el(`<div class="list-row" data-searchopen style="color:var(--ink-2)"><span class="list-emoji">🔍</span><span class="list-name">Search</span></div>`));
   v.appendChild(el(`<div class="list-row" data-inboxopen><span class="list-emoji">📥</span><span class="list-name">Inbox</span><span class="list-count">${inbox.length}</span></div>`));
   v.appendChild(el(`<div class="section-label">Your lists</div>`));
   for (const l of lists) {
@@ -374,7 +405,7 @@ async function renderLists() {
       <span class="list-name">${esc(l.name)}</span>
       <span class="list-count">${l.open_count}</span></div>`));
   }
-  const add = el(`<div class="list-row" id="add-list" style="color:var(--primary);justify-content:center;font-weight:700">＋ New list</div>`);
+  const add = el(`<div class="list-row" id="add-list" style="color:var(--accent);justify-content:center;font-weight:700">＋ New list</div>`);
   v.appendChild(add);
   $('#add-list').addEventListener('click', () => openListEditor());
 }
@@ -435,8 +466,8 @@ async function renderSettings() {
   const pushOn = ('Notification' in window) && Notification.permission === 'granted' && await hasPushSub();
 
   v.appendChild(el(`<div class="section-label">Appearance</div>`));
-  const theme = el(`<div class="settings-card"><div class="set-row"><span>Theme</span><div class="chips" id="set-theme">
-    ${[['Auto', 'auto'], ['Light', 'light'], ['Dark', 'dark']].map(([n, val]) => `<button class="chip-btn ${(s.theme || 'auto') === val ? 'on' : ''}" data-theme-set="${val}">${n}</button>`).join('')}
+  const theme = el(`<div class="settings-card"><div class="set-row"><span>Theme<br><small class="muted">Tip: long-press the screen title to flip themes anywhere</small></span><div class="chips" id="set-theme">
+    ${THEMES.map((t) => `<button class="chip-btn ${themeId() === t.id ? 'on' : ''}" data-theme-set="${t.id}">${t.name}</button>`).join('')}
   </div></div>
   <div class="set-row"><span>Week starts</span><div class="chips" id="set-week">
     ${[['Sunday', 0], ['Monday', 1]].map(([n, val]) => `<button class="chip-btn ${(s.week_start || 0) == val ? 'on' : ''}" data-week="${val}">${n}</button>`).join('')}
@@ -486,7 +517,7 @@ async function renderSettings() {
   if (!cals.length) cl.appendChild(el(`<p class="muted" style="font-size:13px;margin:2px 0">No calendars yet.</p>`));
   cals.forEach((c) => {
     const row = el(`<div class="cal-item"><i class="list-dot" style="background:${esc(c.color)}"></i>
-      <div style="flex:1"><b>${esc(c.name)}</b>${c.last_error ? `<br><small style="color:var(--now)">${esc(c.last_error)}</small>` : c.last_synced ? `<br><small class="muted">synced</small>` : ''}</div>
+      <div style="flex:1"><b>${esc(c.name)}</b>${c.last_error ? `<br><small style="color:var(--danger)">${esc(c.last_error)}</small>` : c.last_synced ? `<br><small class="muted">synced</small>` : ''}</div>
       <button class="chip-btn" data-calsync="${c.id}">↻</button><button class="se-del" data-caldel="${c.id}">×</button></div>`);
     cl.appendChild(row);
   });
@@ -501,7 +532,7 @@ async function renderSettings() {
   v.appendChild(el(`<p class="muted" style="font-size:12px;text-align:center;margin-top:18px">Tempo · private, self-hosted. One login, every device.</p>`));
 
   // wire
-  $('#set-theme').addEventListener('click', async (e) => { const b = e.target.closest('[data-theme-set]'); if (!b) return; await api('PATCH', '/settings', { theme: b.dataset.themeSet }); state.settings.theme = b.dataset.themeSet; applyTheme(); render(); });
+  $('#set-theme').addEventListener('click', async (e) => { const b = e.target.closest('[data-theme-set]'); if (!b) return; await setTheme(b.dataset.themeSet); render(); });
   $('#set-week').addEventListener('click', async (e) => { const b = e.target.closest('[data-week]'); if (!b) return; await api('PATCH', '/settings', { week_start: Number(b.dataset.week) }); state.settings.week_start = Number(b.dataset.week); render(); });
   $('#set-push').addEventListener('click', enablePush);
   const saveQuiet = async () => { await api('PATCH', '/settings', { quiet_start: $('#q-start').value, quiet_end: $('#q-end').value }); toast('Quiet hours saved'); };
@@ -528,7 +559,7 @@ async function renderSettings() {
 }
 
 function openCalendarAdd() {
-  const colors = ['#8b8fa8', '#5b5bd6', '#34c88a', '#ff7a59', '#e0a43b', '#d65db1'];
+  const colors = ['#5C6470', '#2F6B55', '#C05E3B', '#B98207', '#6366F1', '#C4453C'];
   $('#sheet-body').innerHTML = `<h2>Subscribe to a calendar</h2>
     <p class="muted" style="font-size:13px;margin-top:-6px">Paste the <b>secret ICS address</b> from Google Calendar (Settings → your calendar → “Secret address in iCal format”), Apple iCloud (share → Public Calendar), or Outlook (Publish calendar → ICS).</p>
     <div class="field"><label>Name</label><input type="text" id="cal-name" placeholder="e.g. Work" /></div>
@@ -536,7 +567,7 @@ function openCalendarAdd() {
     <div class="field"><label>Colour</label><div class="chips" id="cal-color">${colors.map((c, i) => `<button class="chip-btn ${i === 1 ? 'on' : ''}" data-c="${c}" style="background:${c};color:#fff;border-color:${c}">●</button>`).join('')}</div></div>
     <div class="sheet-actions"><button class="btn-primary" id="cal-save">Subscribe</button></div>`;
   openSheet();
-  let color = '#5b5bd6';
+  let color = '#2F6B55';
   $('#cal-color').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; color = b.dataset.c; $('#cal-color').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); });
   $('#cal-save').addEventListener('click', async () => {
     const url = $('#cal-url').value.trim(); if (!url) { toast('Paste the ICS URL'); return; }
@@ -638,7 +669,7 @@ function byDate(items, key = 'due_at') { const m = {}; for (const t of items) { 
 async function getEvents(from, to) { try { return await api('GET', `/calendars/events?from=${from}&to=${to}`); } catch { return []; } }
 function eventChip(ev) {
   const time = ev.all_day ? 'all day' : fmt12(ev.start.split('T')[1] || '');
-  return `<div class="cal-event" style="border-color:${esc(ev.color || 'var(--ink-faint)')}"><i style="background:${esc(ev.color || 'var(--ink-faint)')}"></i>${time ? `<b>${esc(time)}</b> ` : ''}${esc(ev.title)}</div>`;
+  return `<div class="cal-event" style="border-color:${esc(ev.color || 'var(--ink-3)')}"><i style="background:${esc(ev.color || 'var(--ink-3)')}"></i>${time ? `<b>${esc(time)}</b> ` : ''}${esc(ev.title)}</div>`;
 }
 
 async function calMonth(body) {
@@ -656,7 +687,7 @@ async function calMonth(body) {
     const k = ymd(cur); const items = map[k] || []; const evs = emap[k] || [];
     const undone = items.filter((t) => !t.done).length;
     const cls = [cur.getMonth() !== mo ? 'other' : '', k === todayStr() ? 'today' : '', k === state.calSel ? 'sel' : ''].join(' ');
-    const dots = (items.length || evs.length) ? `<div class="day-dots">${items.slice(0, 3).map(() => `<i class="${undone ? '' : 'all-done'}"></i>`).join('')}${evs.slice(0, 2).map((e) => `<i style="background:${esc(e.color || 'var(--ink-faint)')}"></i>`).join('')}</div>` : '';
+    const dots = (items.length || evs.length) ? `<div class="day-dots">${items.slice(0, 3).map(() => `<i class="${undone ? '' : 'all-done'}"></i>`).join('')}${evs.slice(0, 2).map((e) => `<i style="background:${esc(e.color || 'var(--ink-3)')}"></i>`).join('')}</div>` : '';
     grid.appendChild(el(`<button class="day-cell ${cls}" data-day="${k}">${cur.getDate()}${dots}</button>`));
   }
   body.appendChild(grid);
@@ -702,7 +733,7 @@ async function calRange(body, days) {
 function renderDayList(container, items, dayKey, inline, events = []) {
   if (!inline) container.appendChild(el(`<div class="day-heading"><span>${parseYmd(dayKey).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span><span class="dh-count">${(items.length + events.length) || 'nothing'}</span></div>`));
   events.forEach((e) => container.appendChild(el(eventChip(e))));
-  if (!items.length && !events.length) { if (inline) container.appendChild(el(`<div style="color:var(--ink-faint);font-size:13px;padding:2px 2px 10px">—</div>`)); return; }
+  if (!items.length && !events.length) { if (inline) container.appendChild(el(`<div style="color:var(--ink-3);font-size:13px;padding:2px 2px 10px">—</div>`)); return; }
   items.forEach((t) => container.appendChild(taskCard(t)));
 }
 
@@ -740,7 +771,7 @@ async function calTimeline(body) {
   events.filter((e) => !e.all_day).forEach((e) => {
     const t = e.start.split('T')[1]; if (!t) return;
     const dur = e.end ? (new Date(e.end) - new Date(e.start)) / 60000 : 45;
-    place(topFor(t), dur / 60 * TL_HOURH, 'tl-block tl-event', `<b>${esc(fmt12(t))}</b> ${esc(e.title)}`).style.setProperty('--evc', e.color || 'var(--ink-faint)');
+    place(topFor(t), dur / 60 * TL_HOURH, 'tl-block tl-event', `<b>${esc(fmt12(t))}</b> ${esc(e.title)}`).style.setProperty('--evc', e.color || 'var(--ink-3)');
   });
   tasks.filter((t) => t.has_time && !t.done).forEach((t) => {
     const time = t.due_at.split('T')[1];
@@ -1010,8 +1041,8 @@ function openTaskEditor(task, defaults = {}) {
 
 // ---------------------------------------------------------------- goal & list editors
 function openGoalEditor(goal) {
-  const g = goal || { color: '#5b5bd6' };
-  const colors = ['#5b5bd6', '#34c88a', '#ff7a59', '#e0a43b', '#d65db1'];
+  const g = goal || { color: '#5C6470' };
+  const colors = ['#5C6470', '#2F6B55', '#C05E3B', '#B98207', '#6366F1'];
   const body = $('#sheet-body');
   body.innerHTML = `<h2>${goal ? 'Edit goal' : 'New goal'}</h2>
     <div class="field"><label>Goal</label><input type="text" id="g-name" value="${esc(g.name || '')}" placeholder="e.g. Learn Spanish" /></div>
@@ -1034,7 +1065,7 @@ function openGoalEditor(goal) {
 }
 
 function openListEditor(list) {
-  const l = list || { color: '#5b5bd6', emoji: '' };
+  const l = list || { color: '#5C6470', emoji: '' };
   const body = $('#sheet-body');
   body.innerHTML = `<h2>${list ? 'Edit list' : 'New list'}</h2>
     <div class="row2">
@@ -1042,7 +1073,7 @@ function openListEditor(list) {
       <div class="field"><label>Name</label><input type="text" id="l-name" value="${esc(l.name || '')}" placeholder="e.g. Errands" /></div>
     </div>
     <div class="field"><label>Colour</label><div class="chips" id="l-color">
-      ${['#5b5bd6', '#34c88a', '#ff7a59', '#e0a43b', '#d65db1', '#8b8fa8'].map((c) => `<button class="chip-btn ${l.color === c ? 'on' : ''}" data-color="${c}" style="background:${c};color:#fff;border-color:${c}">●</button>`).join('')}</div></div>
+      ${['#5C6470', '#2F6B55', '#C05E3B', '#B98207', '#6366F1', '#C4453C'].map((c) => `<button class="chip-btn ${l.color === c ? 'on' : ''}" data-color="${c}" style="background:${c};color:#fff;border-color:${c}">●</button>`).join('')}</div></div>
     <div class="sheet-actions"><button class="btn-primary" id="l-save">${list ? 'Save' : 'Add list'}</button>
       ${list ? '<button class="btn-ghost btn-danger" id="l-del">Delete</button>' : ''}</div>`;
   openSheet();
@@ -1068,7 +1099,7 @@ function openFocus(task, minutes) {
     <div class="fx-timer">
       <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
         <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--line)" stroke-width="${stroke}"/>
-        <circle id="fx-ring" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--now)" stroke-width="${stroke}"
+        <circle id="fx-ring" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--accent)" stroke-width="${stroke}"
           stroke-linecap="round" stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="0" transform="rotate(-90 ${size / 2} ${size / 2})"/>
       </svg>
       <div class="fx-num" id="fx-num"></div>
@@ -1120,7 +1151,7 @@ async function pickForMe() {
         </div>
       </div>
       <div class="sheet-actions">
-        <button class="btn-primary" style="background:var(--now)" id="pk-start">▶ Just start · 2 min</button>
+        <button class="btn-primary" style="background:var(--accent)" id="pk-start">▶ Just start · 2 min</button>
       </div>
       <div class="sheet-actions" style="margin-top:8px">
         <button class="btn-ghost" id="pk-shuffle" style="flex:1">🔀 Something else</button>
@@ -1280,7 +1311,7 @@ $('#more-btn').addEventListener('click', () => {
       <button class="menu-item" id="m-review">📋 <span>Weekly review</span></button>
       <button class="menu-item" id="m-goal">◈ <span>New goal</span></button>
       <button class="menu-item" id="m-settings">⚙️ <span>Settings</span></button>
-      <button class="menu-item" id="m-logout" style="color:var(--now)">⎋ <span>Log out</span></button>
+      <button class="menu-item" id="m-logout" style="color:var(--danger)">⎋ <span>Log out</span></button>
     </div>`;
   openSheet();
   $('#m-search').addEventListener('click', openSearch);
