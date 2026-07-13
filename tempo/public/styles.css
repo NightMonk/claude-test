@@ -358,6 +358,31 @@ button { cursor: pointer; }
 .sub-editor .se-row input { flex: 1; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); }
 .sub-editor .se-del { color: var(--ink-3); background: none; border: none; font-size: var(--fs-3); }
 
+/* ---- Phase 3: subtask polish (reorder handle, inline tick) ---- */
+.sub-editor .se-handle {
+  flex: none; width: 22px; padding: 0; border: none; background: none; cursor: grab;
+  color: var(--ink-3); font-size: var(--fs-3); line-height: 1; touch-action: none;
+}
+.sub-editor .se-check {
+  flex: none; width: 22px; height: 22px; border-radius: var(--r-chip); border: 2px solid var(--line);
+  background: var(--bg); color: transparent; font-size: var(--fs-6); font-weight: 800; line-height: 1;
+}
+.sub-editor .se-check.done { background: var(--ok); border-color: var(--ok); color: #fff; }
+.sub-editor .se-row.is-done input { color: var(--ink-3); text-decoration: line-through; }
+.sub-editor .se-row.dragging { opacity: .9; box-shadow: var(--shadow); border-radius: var(--r-sm); position: relative; z-index: 5; background: var(--surface); }
+
+/* ---- Phase 3: creation-sheet inline steps ---- */
+.cap-steps-toggle {
+  display: inline-block; margin: 2px 2px 10px; padding: 6px 2px;
+  border: none; background: none; color: var(--accent); font-weight: 650; font-size: var(--fs-5);
+}
+.cap-steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.cap-step { display: flex; align-items: center; gap: 8px; }
+.cap-step input { flex: 1; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); }
+.cap-step .se-dot { width: 18px; height: 18px; border-radius: var(--r-chip); border: 2px dashed var(--line); flex: none; }
+.cap-step .se-del { color: var(--ink-3); background: none; border: none; font-size: var(--fs-3); }
+.cap-actions .btn-ghost { flex: none; }
+
 /* ---- focus mode ---- */
 .focus-overlay {
   position: fixed; inset: 0; z-index: 60; background: var(--bg);

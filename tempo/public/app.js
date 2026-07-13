@@ -904,9 +904,14 @@ function dragToSchedule(elem, task) {
 
 // ---------------------------------------------------------------- quick capture
 const LIST_RE = /#([\p{L}\d_-]+)/u;
+const WEEKDAY_RE = 'mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?';
+
+// Natural-language capture. Structured tokens (#list, !priority, ~estimate,
+// repeat) are pulled out by hand; the date/time is read by chrono-node (the
+// vendored browser bundle), with a small regex fallback if it isn't loaded so
+// capture still works offline before the bundle caches.
 function parseQuick(text) {
-  let title = text, due = null, hasTime = false, priority = 0, listId = null, repeat = 'none', estimate = null;
-  const now = new Date();
+  let title = text, priority = 0, listId = null, repeat = 'none', estimate = null;
 
   const lm = title.match(LIST_RE);
   if (lm) { const found = state.lists.find((l) => l.name.toLowerCase().replace(/\s/g, '') === lm[1].toLowerCase()); if (found) { listId = found.id; title = title.replace(lm[0], ''); } }
@@ -914,10 +919,44 @@ function parseQuick(text) {
   if (pm) { const p = pm[1].toLowerCase(); priority = /h|2/.test(p) ? 2 : /l/.test(p) ? 0 : 1; title = title.replace(pm[0], ''); }
   const em = title.match(/~\s*(\d+)\s*(m|min|h|hr)?/i);
   if (em) { estimate = /h/i.test(em[2] || '') ? Number(em[1]) * 60 : Number(em[1]); title = title.replace(em[0], ''); }
-  const rm = title.match(/\bevery\s+(day|week|month|year|morning)\b/i) || title.match(/\b(daily|weekly|monthly|annually|yearly)\b/i);
-  if (rm) { const w = (rm[1] || '').toLowerCase(); repeat = /day|dail|morning/.test(w) ? 'daily' : /week/.test(w) ? 'weekly' : /month/.test(w) ? 'monthly' : 'annual'; title = title.replace(rm[0], ''); }
 
-  let base = null;
+  // Repeat. "every <weekday>" sets a weekly repeat but leaves the weekday in
+  // place so chrono still schedules the first occurrence (e.g. next Friday).
+  const rWeekday = title.match(new RegExp(`\\bevery\\s+(?=(?:${WEEKDAY_RE})\\b)`, 'i'));
+  if (rWeekday) { repeat = 'weekly'; title = title.replace(rWeekday[0], ''); }
+  else {
+    const rm = title.match(/\bevery\s+(day|week|month|year|morning)\b/i) || title.match(/\b(daily|weekly|monthly|annually|yearly)\b/i);
+    if (rm) { const w = (rm[1] || '').toLowerCase(); repeat = /day|dail|morning/.test(w) ? 'daily' : /week/.test(w) ? 'weekly' : /month/.test(w) ? 'monthly' : 'annual'; title = title.replace(rm[0], ''); }
+  }
+
+  const parsed = parseDateNL(title);
+  title = parsed.title.replace(/\s{2,}/g, ' ').replace(/\s+([,.!?])/g, '$1').trim();
+  return { title, due_at: parsed.due_at, has_time: parsed.has_time, priority, list_id: listId, repeat, estimate_min: estimate };
+}
+
+// Date/time extraction. Prefers chrono-node; strips the recognised phrase from
+// the title and returns Tempo's wall-clock strings.
+function parseDateNL(title) {
+  if (window.TempoChrono) {
+    try {
+      const results = window.TempoChrono.parse(title, new Date(), { forwardDate: true });
+      if (results.length) {
+        const r = results[0];
+        const d = r.start.date();
+        const hasTime = r.start.isCertain('hour');
+        const due = hasTime ? `${ymd(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}` : ymd(d);
+        const stripped = (title.slice(0, r.index) + title.slice(r.index + r.text.length)).replace(/\b(on|at|by|due)\s*$/i, '');
+        return { title: stripped, due_at: due, has_time: hasTime ? 1 : 0 };
+      }
+    } catch { /* fall through to regex */ }
+  }
+  return parseDateFallback(title);
+}
+
+// Offline fallback: the original hand-rolled parser. Narrow but dependency-free.
+function parseDateFallback(title) {
+  const now = new Date();
+  let base = null, hasTime = false;
   if (/\btoday\b/i.test(title)) { base = new Date(now); title = title.replace(/\btoday\b/i, ''); }
   else if (/\btonight\b/i.test(title)) { base = new Date(now); hasTime = true; base.setHours(20, 0); title = title.replace(/\btonight\b/i, ''); }
   else if (/\b(tomorrow|tmr|tmrw)\b/i.test(title)) { base = new Date(now); base.setDate(now.getDate() + 1); title = title.replace(/\b(tomorrow|tmr|tmrw)\b/i, ''); }
@@ -933,10 +972,8 @@ function parseQuick(text) {
     if (ap === 'pm' && h < 12) h += 12; if (ap === 'am' && h === 12) h = 0;
     base.setHours(h, min); hasTime = true; title = title.replace(tm[0], '');
   }
-  if (base) due = hasTime ? `${ymd(base)}T${pad(base.getHours())}:${pad(base.getMinutes())}` : ymd(base);
-
-  title = title.replace(/\s{2,}/g, ' ').trim();
-  return { title, due_at: due, has_time: hasTime ? 1 : 0, priority, list_id: listId, repeat, estimate_min: estimate };
+  const due = base ? (hasTime ? `${ymd(base)}T${pad(base.getHours())}:${pad(base.getMinutes())}` : ymd(base)) : null;
+  return { title, due_at: due, has_time: hasTime ? 1 : 0 };
 }
 
 function openCapture() {
@@ -949,10 +986,17 @@ function openCapture() {
       <button class="chip-btn" data-q="tomorrow">→ Tomorrow</button>
       ${state.lists.map((l) => `<button class="chip-btn" data-ql="${l.id}">${esc(l.emoji || '')} ${esc(l.name)}</button>`).join('')}
     </div>
-    <div class="sheet-actions"><button class="btn-primary" id="cap-add">Add</button></div>`;
+    <button class="cap-steps-toggle" id="cap-steps-toggle">＋ Break into steps</button>
+    <div class="cap-steps hidden" id="cap-steps"></div>
+    <div class="sheet-actions cap-actions">
+      <button class="btn-ghost" id="cap-more">More options</button>
+      <button class="btn-primary" id="cap-add">Add</button>
+    </div>`;
   openSheet();
   const input = $('#cap'); const hint = $('#cap-hint');
   let forceList = null, forceDue = null, myDay = false;
+  let steps = [];        // inline subtasks captured before saving
+  let stepsShown = false;
   setTimeout(() => input.focus(), 60);
   const preview = () => {
     const p = parseQuick(input.value);
@@ -966,6 +1010,29 @@ function openCapture() {
     if (p.estimate_min) bits.push('⏱ ' + p.estimate_min + 'm');
     hint.innerHTML = bits.length ? bits.map((b) => `<b>${b}</b>`).join(' &nbsp; ') : 'Just type — I\'ll pick out the date, list &amp; priority.';
   };
+
+  // Inline steps: a growing list of subtask inputs. Enter on the last blank row
+  // adds another; empties are dropped on save.
+  function drawSteps(focusLast) {
+    const box = $('#cap-steps');
+    box.innerHTML = '';
+    steps.forEach((s, i) => {
+      const row = el(`<div class="cap-step"><span class="se-dot"></span><input value="${esc(s)}" placeholder="Step ${i + 1}" /><button class="se-del" aria-label="remove">×</button></div>`);
+      const inp = row.querySelector('input');
+      inp.addEventListener('input', (e) => { steps[i] = e.target.value; });
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (i === steps.length - 1 && e.target.value.trim()) { steps.push(''); drawSteps(true); } } });
+      row.querySelector('.se-del').addEventListener('click', () => { steps.splice(i, 1); if (!steps.length) steps.push(''); drawSteps(); });
+      box.appendChild(row);
+    });
+    if (focusLast) box.querySelector('.cap-step:last-child input')?.focus();
+  }
+  $('#cap-steps-toggle').addEventListener('click', () => {
+    stepsShown = !stepsShown;
+    $('#cap-steps').classList.toggle('hidden', !stepsShown);
+    $('#cap-steps-toggle').textContent = stepsShown ? '− Hide steps' : '＋ Break into steps';
+    if (stepsShown) { if (!steps.length) steps.push(''); drawSteps(true); }
+  });
+
   input.addEventListener('input', preview);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
   $('#cap-quick').addEventListener('click', (e) => {
@@ -975,14 +1042,27 @@ function openCapture() {
     if (b.dataset.ql) { forceList = forceList === Number(b.dataset.ql) ? null : Number(b.dataset.ql); document.querySelectorAll('[data-ql]').forEach((x) => x.classList.toggle('on', Number(x.dataset.ql) === forceList)); }
     preview();
   });
-  async function submit() {
+
+  const buildPayload = () => {
     const p = parseQuick(input.value);
-    if (!p.title) { toast('Give it a title'); return; }
     if (forceList) p.list_id = forceList;
     if (forceDue && !p.due_at) { p.due_at = forceDue; p.has_time = 0; }
     if (myDay) p.my_day_date = todayStr();
-    await api('POST', '/tasks', p);
-    closeSheet(); toast('Added ✓'); refreshMeta().then(render);
+    return p;
+  };
+  // Hand off everything typed so far to the full editor — no data lost.
+  $('#cap-more').addEventListener('click', () => {
+    const p = buildPayload();
+    if (!p.title) { toast('Give it a title first'); return; }
+    openTaskEditor(null, { ...p, subtasks: steps.map((t) => t.trim()).filter(Boolean).map((t) => ({ title: t })) });
+  });
+  async function submit() {
+    const p = buildPayload();
+    if (!p.title) { toast('Give it a title'); return; }
+    const created = await api('POST', '/tasks', p);
+    const clean = steps.map((t) => t.trim()).filter(Boolean);
+    for (const t of clean) await api('POST', '/tasks', { title: t, parent_id: created.id });
+    closeSheet(); toast(clean.length ? `Added with ${clean.length} step${clean.length > 1 ? 's' : ''} ✓` : 'Added ✓'); refreshMeta().then(render);
   }
   $('#cap-add').addEventListener('click', submit);
 }
@@ -993,9 +1073,11 @@ const REPEAT_LABEL = { none: 'Repeat', daily: 'Daily', weekly: 'Weekly', monthly
 function openTaskEditor(task, defaults = {}) {
   const draft = task
     ? { ...task }
-    : { title: '', notes: '', priority: 0, repeat: 'none', energy: null, estimate_min: null,
-        list_id: defaults.list_id ?? null, goal_id: defaults.goal_id ?? null, due_at: null, has_time: 0, my_day_date: null };
-  let subs = (task?.subtasks || []).map((s) => ({ id: s.id, title: s.title, done: s.done }));
+    : { title: defaults.title || '', notes: defaults.notes || '', priority: defaults.priority || 0,
+        repeat: defaults.repeat || 'none', energy: defaults.energy ?? null, estimate_min: defaults.estimate_min ?? null,
+        list_id: defaults.list_id ?? null, goal_id: defaults.goal_id ?? null,
+        due_at: defaults.due_at ?? null, has_time: defaults.has_time ?? 0, my_day_date: defaults.my_day_date ?? null };
+  let subs = (task?.subtasks || defaults.subtasks || []).map((s) => ({ id: s.id, title: s.title, done: s.done }));
   let open = null; // currently expanded chip key
   const body = $('#sheet-body');
   const list = () => listById(draft.list_id);
@@ -1086,13 +1168,48 @@ function openTaskEditor(task, defaults = {}) {
     open = open === key ? null : key; paintChips(); paintExpand();
   });
 
+  // Drag a subtask by its handle to reorder. Handle owns the pointer so the
+  // sheet keeps scrolling normally everywhere else.
+  function attachSubReorder(row, idx) {
+    const handle = row.querySelector('.se-handle'); if (!handle) return;
+    let dragging = false, startY = 0, targetIdx = idx;
+    const onMove = (e) => {
+      if (!dragging) return;
+      const rows = [...$('#te-subs').querySelectorAll('.se-row:not(.se-add)')];
+      const t = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return e.clientY < b.top + b.height / 2; });
+      targetIdx = t === -1 ? rows.length - 1 : t;
+      row.style.transform = `translateY(${e.clientY - startY}px)`;
+    };
+    const onUp = (e) => {
+      if (!dragging) return; dragging = false;
+      try { handle.releasePointerCapture(e.pointerId); } catch {}
+      handle.removeEventListener('pointermove', onMove); handle.removeEventListener('pointerup', onUp);
+      row.classList.remove('dragging'); row.style.transform = '';
+      if (targetIdx !== idx && targetIdx >= 0) { const [m] = subs.splice(idx, 1); subs.splice(targetIdx, 0, m); }
+      drawSubs();
+    };
+    handle.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); dragging = true; startY = e.clientY; targetIdx = idx;
+      row.classList.add('dragging');
+      try { handle.setPointerCapture(e.pointerId); } catch {}
+      handle.addEventListener('pointermove', onMove); handle.addEventListener('pointerup', onUp);
+    });
+  }
+
   function drawSubs() {
     const subBox = $('#te-subs');
     subBox.innerHTML = '';
+    const many = subs.length > 1;
     subs.forEach((s, i) => {
-      const row = el(`<div class="se-row"><span class="se-dot"></span><input value="${esc(s.title)}" placeholder="Subtask ${i + 1}" /><button class="se-del" aria-label="remove">×</button></div>`);
+      const row = el(`<div class="se-row ${s.done ? 'is-done' : ''}">
+        ${many ? '<button class="se-handle" tabindex="-1" aria-label="Reorder">⠿</button>' : '<span class="se-dot"></span>'}
+        <button class="se-check ${s.done ? 'done' : ''}" aria-label="Toggle step">✓</button>
+        <input value="${esc(s.title)}" placeholder="Subtask ${i + 1}" />
+        <button class="se-del" aria-label="remove">×</button></div>`);
       row.querySelector('input').addEventListener('input', (e) => { s.title = e.target.value; });
+      row.querySelector('.se-check').addEventListener('click', () => { s.done = !s.done; drawSubs(); });
       row.querySelector('.se-del').addEventListener('click', () => { subs.splice(i, 1); drawSubs(); });
+      attachSubReorder(row, i);
       subBox.appendChild(row);
     });
     const add = el(`<div class="se-row se-add"><span class="se-dot"></span><input placeholder="Add a subtask" id="te-newsub" /></div>`);
@@ -1118,10 +1235,19 @@ function openTaskEditor(task, defaults = {}) {
     else id = (await api('POST', '/tasks', payload)).id;
     const orig = task?.subtasks || [];
     for (const o of orig) if (!subs.find((s) => s.id === o.id)) await api('DELETE', '/tasks/' + o.id);
-    for (const s of subs) {
-      const st = s.title.trim(); if (!st) continue;
-      if (s.id) { const o = orig.find((x) => x.id === s.id); if (o && o.title !== st) await api('PATCH', '/tasks/' + s.id, { title: st }); }
-      else await api('POST', '/tasks', { title: st, parent_id: id });
+    for (let i = 0; i < subs.length; i++) {
+      const s = subs[i]; const st = (s.title || '').trim(); if (!st) continue;
+      if (s.id) {
+        const o = orig.find((x) => x.id === s.id);
+        const patch = {};
+        if (o && o.title !== st) patch.title = st;
+        if (o && o.sort !== i) patch.sort = i;               // persist reordering
+        if (Object.keys(patch).length) await api('PATCH', '/tasks/' + s.id, patch);
+        if (o && !!o.done !== !!s.done) await api('POST', '/tasks/' + s.id + '/toggle'); // ticked/unticked here
+      } else {
+        const created = await api('POST', '/tasks', { title: st, parent_id: id, sort: i });
+        if (s.done && created?.id) await api('POST', '/tasks/' + created.id + '/toggle');
+      }
     }
     closeSheet(); toast(task ? 'Saved' : 'Added ✓'); refreshMeta().then(render);
   });
