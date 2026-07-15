@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Tempo — ONE-TIME bootstrap deploy from ORACLE CLOUD SHELL (iPhone-friendly).
+#  Tempo — ONE-TIME bootstrap deploy for ORACLE CLOUD SHELL (iPhone-friendly).
 # =============================================================================
-#  Run this ONE line in Cloud Shell (nothing to edit, safe to re-run):
+#  Upload this file into Cloud Shell, then run exactly:
 #
-#    bash <(curl -fsSL https://raw.githubusercontent.com/NightMonk/claude-test/refs/heads/claude/adhd-todo-app-design-loysre/tempo/deploy/cloudshell-deploy.sh)
+#      bash boot.sh
+#
+#  Nothing to edit, no arguments, no prompts. Safe to re-run if it stops.
+#  (Alternatively, if you can paste:  bash <(curl -fsSL <raw-url-to-this-file>) )
 #
 #  What it does, start to finish:
 #    1. finds your server instance by its public IP (144.21.51.57)
@@ -13,8 +16,8 @@
 #    4. installs a permanent auto-updater so a terminal is NEVER needed again
 #    5. verifies the live site actually updated
 #
-#  If anything can't work on this tenancy/image, it stops and prints an exact
-#  Plan B — it never leaves you at a dead prompt. Success ends with "ALL-DONE".
+#  If anything can't work on this tenancy/image it STOPS and prints an exact
+#  Plan B — never a silent failure. Success ends with "ALL-DONE".
 # =============================================================================
 set -uo pipefail
 
@@ -34,7 +37,7 @@ planB() {
   printf ' PLAN B — %s\n' "$1"; shift
   printf '=======================================================================\033[0m\n'
   cat
-  printf '\n(Re-running this same one-line command is always safe.)\n'
+  printf '\n(Re-running is always safe — just:  bash boot.sh)\n'
   rm -f "$KEY" "${KEY}.pub" 2>/dev/null
   exit 1
 }
@@ -50,7 +53,7 @@ BANNER
 step "1/8" "Preflight — checking Cloud Shell tools & region"
 command -v oci >/dev/null 2>&1 || planB "Cloud Shell has no OCI CLI" <<'EOF'
 This doesn't look like Oracle Cloud Shell. Open the Cloud Shell (the >_ icon,
-top-right of the OCI console) and paste the one-liner there.
+top-right of the OCI console) and run  bash boot.sh  there.
 EOF
 REGION=$(oci iam region-subscription list --query 'data[0]."region-name"' --raw-output 2>/dev/null || true)
 info "CLI present. Cloud Shell region: ${REGION:-unknown}"
@@ -65,9 +68,8 @@ if [ "${#IDS[@]}" -eq 0 ]; then
   planB "No compute instances visible in this region" <<EOF
 Cloud Shell is looking in region: ${REGION:-unknown}.
 Your server is in UK South (London). Fix in 5 seconds:
-  - In the Cloud Shell top bar (or the console top-right Region menu),
-    switch the region to  UK South (London) / uk-london-1.
-  - Then re-run the one-line command.
+  - In the console top-right Region menu, switch to UK South (London).
+  - Then run  bash boot.sh  again.
 EOF
 fi
 INST=""
@@ -83,9 +85,9 @@ if [ -z "$INST" ]; then
   else
     planB "Couldn't match $SERVER_IP among instances in this region" <<EOF
 Found ${#IDS[@]} instances but none had public IP $SERVER_IP.
-Most likely Cloud Shell is in the wrong region. Switch the Region (top bar) to
-UK South (London) and re-run. If you're sure you're in the right region, the
-server's public IP may have changed — check Compute -> Instances -> your VM.
+Most likely Cloud Shell is in the wrong region. Switch the Region (top-right) to
+UK South (London) and re-run. If the region is right, the server's public IP may
+have changed — check Compute -> Instances -> your VM.
 EOF
   fi
 fi
@@ -124,11 +126,11 @@ This is the most common first-run snag and it's a 2-tap fix in the console:
   1. Console -> Compute -> Instances -> "$NAME".
   2. Open the "Oracle Cloud Agent" tab.
   3. Toggle the "Bastion" plugin to Enabled (if it's already on, just wait).
-  4. Give it ~5 minutes, then RE-RUN the one-line command.
+  4. Give it ~5 minutes, then run  bash boot.sh  again.
 
-If the Oracle Cloud Agent tab shows the agent itself as "not running" or the
-instance is a very old image, the deepest fallback is the serial console
-(see the PLAN B under Step 6). On a phone, the toggle above is the reliable path.
+If the Agent itself shows "not running" or the image is very old, the deepest
+fallback is the serial console (see the PLAN B under Step 6). On a phone, the
+toggle above is the reliable path.
 EOF
 fi
 ok "Bastion plugin is RUNNING"
@@ -152,7 +154,7 @@ Create it once by hand (2 minutes, works from the phone), then re-run:
   2. Name it exactly:  tempo-bastion
   3. Target VCN: the one your server is in.  Target subnet: that VCN's subnet.
   4. CIDR allowlist:  0.0.0.0/0
-  5. Create, wait for ACTIVE, then RE-RUN the one-line command.
+  5. Create, wait for ACTIVE, then run  bash boot.sh  again.
 
 (If "Create" is blocked by a policy error, your user needs the
  manage bastion-family permission — an OCI admin grants it.)
@@ -171,8 +173,10 @@ elif ssh-keygen -t ecdsa -b 256 -f "$KEY" -N "" -q 2>/dev/null; then
   info "Using an ECDSA P-256 key (FIPS-compatible)."
 else
   planB "Couldn't generate a FIPS-compatible temp key" <<'EOF'
-Both RSA and ECDSA key generation failed. Clear any stale keys and re-run:
+Both RSA and ECDSA key generation failed in Cloud Shell (unexpected). Clear any
+stale keys and re-run:
   rm -f ~/.ssh/tempo_deploy_*
+  bash boot.sh
 EOF
 fi
 SID=$(oci bastion session create-managed-ssh --bastion-id "$BID" --target-resource-id "$INST" \
@@ -181,7 +185,7 @@ SID=$(oci bastion session create-managed-ssh --bastion-id "$BID" --target-resour
 if [ -z "$SID" ] || [ "$SID" = "null" ]; then
   planB "The Bastion session wouldn't open (managed SSH unavailable)" <<EOF
 The Bastion exists but a managed-SSH session to the instance failed. Causes &
-fixes (try in order, re-running after each):
+fixes (try in order, re-running  bash boot.sh  after each):
 
   - Plugin still warming up — wait 5 min and re-run.
   - The Bastion's subnet can't reach the instance — make sure the Bastion and
@@ -242,7 +246,7 @@ if [ $RC -ne 0 ] || ! printf '%s' "$OUT" | grep -q '===DEPLOY_OK==='; then
   planB "The remote deploy didn't confirm success" <<EOF
 The tunnel opened but the deploy above didn't print ===DEPLOY_OK===.
 Read the indented server output above for the reason (often a transient git or
-npm hiccup). Re-running the one-liner is safe and usually clears it. If it keeps
+npm hiccup). Re-running  bash boot.sh  is safe and usually clears it. If it keeps
 failing, screenshot the server output and send it to Claude.
 EOF
 fi
