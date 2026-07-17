@@ -383,6 +383,57 @@ button { cursor: pointer; }
 .cap-step .se-del { color: var(--ink-3); background: none; border: none; font-size: var(--fs-3); }
 .cap-actions .btn-ghost { flex: none; }
 
+/* ---- Quick-Add sheet refactor (When / List / parse chips) ---- */
+/* Removable parse chips (these DO carry a glyph: 📅 ⚡ ⏱ 🔁). */
+.cap-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.cap-chips:empty { display: none; }
+.cap-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 6px 0 12px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2);
+  color: var(--ink); font-size: var(--fs-5); font-weight: 600;
+}
+.cap-chip-x {
+  display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+  border-radius: 50%; color: var(--ink-3); font-size: var(--fs-6);
+}
+.cap-chip:active { transform: scale(.96); }
+
+/* Helper line: clearly separated from the input, ~60% ink, never touching it. */
+.cap-help {
+  margin-top: 8px; line-height: 1.4; font-size: var(--fs-5);
+  color: color-mix(in srgb, var(--ink) 60%, var(--surface));
+}
+
+.cap-field { margin-top: 16px; }
+.cap-label { font-size: var(--fs-6); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 8px; }
+
+/* "When" — single-select segmented control, accent fill when selected. */
+.seg { display: flex; gap: 8px; }
+.seg-btn {
+  flex: 1; min-height: 44px; border: 1px solid var(--line); background: transparent;
+  color: var(--ink-2); border-radius: var(--r-ctl); font-weight: 650; font-size: var(--fs-4);
+  transition: background-color .12s, color .12s, border-color .12s;
+}
+.seg-btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.seg-btn:active { transform: scale(.98); }
+
+/* "List" — single-select pills with a colored dot; selected fills a tint of it. */
+.pills { display: flex; flex-wrap: wrap; gap: 12px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px;
+  border: 1px solid var(--line); border-radius: 999px; background: transparent;
+  color: var(--ink); font-weight: 600; font-size: var(--fs-4);
+}
+.pill-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dot, var(--ink-3)); flex: none; }
+.pill.on { border-color: var(--dot); background: color-mix(in srgb, var(--dot) 16%, var(--surface)); }
+.pill:active { transform: scale(.97); }
+.pill-add { color: var(--ink-3); font-size: var(--fs-2); padding: 0 18px; }
+
+/* More options + full-width Add (respect the home-indicator safe area). */
+.cap-more { display: block; width: 100%; margin-top: 12px; padding: 12px; border: none; background: none; color: var(--ink-2); font-weight: 650; font-size: var(--fs-4); }
+.cap-add-wrap { margin-top: 10px; padding-bottom: env(safe-area-inset-bottom); }
+.cap-add-full { width: 100%; }
+
 /* ---- Phase 4: Upcoming (Next 7 Days) agenda ---- */
 .up-day { margin-bottom: 18px; }
 .up-day.is-today .up-label { color: var(--accent); }
