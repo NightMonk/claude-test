@@ -1397,7 +1397,7 @@ function openTaskEditor(task, defaults = {}) {
     { key: 'myday', label: draft.my_day_date === todayStr() ? '◎ In My Day' : '◎ Add to My Day', on: draft.my_day_date === todayStr() },
     { key: 'reminder', label: humanDue() ? '🕐 ' + humanDue() : '🕐 Reminder', on: !!draft.due_at },
     { key: 'repeat', label: '🔁 ' + REPEAT_LABEL[draft.repeat], on: draft.repeat !== 'none' },
-    { key: 'list', label: list() ? (list().emoji || '📁') + ' ' + list().name : '📁 List', on: !!draft.list_id },
+    { key: 'list', html: list() ? `<span class="te-dot" style="--dot:${esc(list().color)}"></span>${esc(list().name)}` : `<span class="te-dot te-dot-empty"></span>List`, on: !!draft.list_id },
     { key: 'priority', label: draft.priority ? '❗ ' + (draft.priority === 2 ? 'High' : 'Medium') : '➖ Priority', on: !!draft.priority },
     { key: 'energy', label: draft.energy ? ENERGY[draft.energy] : '⚡ Energy', on: !!draft.energy },
     { key: 'time', label: draft.estimate_min ? '⏱ ' + (draft.estimate_min < 60 ? draft.estimate_min + 'm' : draft.estimate_min / 60 + 'h') : '⏱ Time', on: !!draft.estimate_min },
@@ -1405,7 +1405,7 @@ function openTaskEditor(task, defaults = {}) {
   ];
 
   function paintChips() {
-    $('#te-chips').innerHTML = chipDefs().map((c) => `<button class="te-chip ${c.on ? 'on' : ''} ${open === c.key ? 'active' : ''}" data-chip="${c.key}">${esc(c.label)}</button>`).join('');
+    $('#te-chips').innerHTML = chipDefs().map((c) => `<button class="te-chip ${c.on ? 'on' : ''} ${open === c.key ? 'active' : ''}" data-chip="${c.key}">${c.html || esc(c.label)}</button>`).join('');
     syncGcalBtn(); // reveal/hide the Google Calendar link as the date changes
   }
 
@@ -1437,7 +1437,10 @@ function openTaskEditor(task, defaults = {}) {
       box.innerHTML = `<div class="ex-label">Repeat</div><div class="chips">${optRow([['Never', 'none'], ['Daily', 'daily'], ['Weekly', 'weekly'], ['Monthly', 'monthly'], ['Yearly', 'annual']], draft.repeat, 'rep')}</div>`;
       box.querySelectorAll('[data-rep]').forEach((b) => b.addEventListener('click', () => { draft.repeat = b.dataset.rep; open = null; paintChips(); paintExpand(); }));
     } else if (open === 'list') {
-      box.innerHTML = `<div class="ex-label">List</div><div class="chips">${optRow([['— None —', ''], ...state.lists.map((l) => [(l.emoji || '') + ' ' + l.name, l.id])], draft.list_id ?? '', 'lst')}</div>`;
+      // Colored-dot pills, matching the Quick-Add list picker (no emoji).
+      const opts = [`<button class="chip-btn ${!draft.list_id ? 'on' : ''}" data-lst="">None</button>`,
+        ...state.lists.map((l) => `<button class="chip-btn te-list-opt ${draft.list_id === l.id ? 'on' : ''}" data-lst="${l.id}" style="--dot:${esc(l.color)}"><span class="te-dot"></span>${esc(l.name)}</button>`)];
+      box.innerHTML = `<div class="ex-label">List</div><div class="chips">${opts.join('')}</div>`;
       box.querySelectorAll('[data-lst]').forEach((b) => b.addEventListener('click', () => { draft.list_id = b.dataset.lst ? Number(b.dataset.lst) : null; open = null; paintChips(); paintExpand(); }));
     } else if (open === 'priority') {
       box.innerHTML = `<div class="ex-label">Priority</div><div class="chips">${optRow([['None', 0], ['Medium', 1], ['High', 2]], draft.priority, 'pr')}</div>`;

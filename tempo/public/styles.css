@@ -525,11 +525,18 @@ button { cursor: pointer; }
 .te-title:focus { outline: none; }
 .te-title::placeholder { color: var(--ink-3); }
 .te-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.te-chip { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: var(--r-ctl); padding: 8px 12px; font-size: var(--fs-5); font-weight: 600; }
+/* Pill chips, matching the Quick-Add sheet's chip/segment language. */
+.te-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 999px; padding: 6px 14px; font-size: var(--fs-5); font-weight: 600; }
 .te-chip.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 .te-chip.active { box-shadow: 0 0 0 2px var(--accent); }
+/* Colored list dot (shared by the list chip and the list picker pills). */
+.te-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dot, var(--ink-3)); flex: none; display: inline-block; }
+.te-dot-empty { background: transparent; border: 2px solid var(--line); box-sizing: border-box; }
 .te-expand { max-height: 0; overflow: hidden; }
 .te-expand.shown { max-height: none; overflow: visible; margin-top: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 12px; }
+/* Pill-shaped option chips inside the expander; list options tint to their color. */
+.te-expand .chip-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; border-radius: 999px; padding: 8px 16px; }
+.te-expand .te-list-opt.on { background: color-mix(in srgb, var(--dot) 16%, var(--surface)); border-color: var(--dot); color: var(--ink); }
 .ex-label { font-size: var(--fs-6); font-weight: 700; color: var(--ink-3); text-transform: uppercase; margin-bottom: 8px; }
 .te-expand input[type=date], .te-expand input[type=time] { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
 .te-expand input:focus { outline: none; border-color: var(--focus); box-shadow: var(--focus-ring); }
