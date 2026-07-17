@@ -50,6 +50,14 @@
       <main id="view"><!-- rendered by app.js --></main>
     </div>
 
+    <!-- Task detail: right slide-over (768-1199) / persistent 3rd column (>=1200);
+         on phones the task editor uses the bottom sheet instead. -->
+    <aside id="detail" class="detail-col" aria-label="Task detail">
+      <button id="detail-close" class="detail-close" aria-label="Close detail">×</button>
+      <div class="detail-inner" id="detail-body"><div class="detail-empty">Select a task to see its details.</div></div>
+    </aside>
+    <div id="detail-scrim" class="detail-scrim"></div>
+
     <button id="fab" class="fab" aria-label="Add task">＋</button>
 
     <nav class="tabbar">

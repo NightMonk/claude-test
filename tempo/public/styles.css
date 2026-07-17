@@ -775,3 +775,59 @@ button { cursor: pointer; }
 .side-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-count { color: var(--ink-3); font-size: var(--fs-5); font-weight: 600; background: var(--surface-2); padding: 1px 8px; border-radius: var(--r-chip); }
 .side-spacer { flex: 1; }
+
+/* =======================================================================
+   Phase 3 — multi-column: task detail panel.
+   <768: hidden (editor uses the bottom sheet).
+   768-1199: right slide-over over a 2-column app.
+   >=1200: persistent 3rd column.
+   >=1440: cap + center the whole app.
+   ======================================================================= */
+.detail-col { display: none; }
+.detail-scrim { display: none; }
+.detail-close { display: none; }
+.detail-empty { margin: auto; padding: 40px 24px; text-align: center; color: var(--ink-3); font-size: var(--fs-4); }
+.detail-inner { padding: 8px 24px 32px; }
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  /* Slide-over from the right, over the 2-column layout. */
+  .detail-col {
+    display: flex; flex-direction: column; position: fixed; top: 0; right: 0; z-index: 45;
+    height: 100%; width: min(440px, 92vw); background: var(--surface); border-left: 1px solid var(--line);
+    overflow-y: auto; transform: translateX(100%); transition: transform .25s cubic-bezier(.2,.9,.3,1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  body.detail-open .detail-col { transform: none; box-shadow: var(--shadow); }
+  .detail-scrim { display: block; position: fixed; inset: 0; z-index: 44; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  body.detail-open .detail-scrim { opacity: 1; pointer-events: auto; }
+  body.detail-open .detail-close { display: block; }
+  .detail-empty { display: none; } /* no persistent empty state in slide-over mode */
+}
+
+@media (min-width: 1200px) {
+  /* Three columns: sidebar | task list | persistent detail. */
+  #app { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--detail-w); }
+  .detail-col {
+    display: flex; flex-direction: column; height: 100%; overflow-y: auto;
+    border-left: 1px solid var(--line); background: var(--surface);
+  }
+  body.detail-open .detail-close { display: block; }
+}
+@media (min-width: 1200px) { :root { --detail-w: 380px; } }
+
+/* Shared detail-close chrome (positioned on desktop only). */
+@media (min-width: 768px) {
+  .detail-close {
+    position: sticky; top: 8px; margin: 8px 8px -32px auto; z-index: 2;
+    width: 34px; height: 34px; border-radius: var(--r-chip); border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink-2); font-size: var(--fs-2); line-height: 1;
+  }
+  .detail-close:hover { background: var(--line-2); }
+}
+
+/* >=1440: cap the whole app and center it; spare width becomes side gutters. */
+@media (min-width: 1440px) {
+  :root { --app-max: 1440px; }
+  #app { max-width: var(--app-max); margin: 0 auto; box-shadow: var(--shadow); }
+  body { background: color-mix(in srgb, var(--bg) 82%, var(--ink)); } /* subtle backdrop behind the capped app */
+}

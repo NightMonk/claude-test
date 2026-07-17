@@ -1338,7 +1338,13 @@ function openTaskEditor(task, defaults = {}) {
         due_at: defaults.due_at ?? null, has_time: defaults.has_time ?? 0, my_day_date: defaults.my_day_date ?? null };
   let subs = (task?.subtasks || defaults.subtasks || []).map((s) => ({ id: s.id, title: s.title, done: s.done }));
   let open = null; // currently expanded chip key
-  const body = $('#sheet-body');
+  // >=768px the editor lives in the side detail panel (slide-over / 3rd column);
+  // on phones it uses the bottom sheet exactly as before.
+  const useDetail = window.matchMedia('(min-width: 768px)').matches;
+  if (useDetail) closeSheet(); // dismiss any open modal (e.g. quick-add) first
+  const body = useDetail ? $('#detail-body') : $('#sheet-body');
+  const openHost = useDetail ? openDetail : openSheet;
+  const closeHost = useDetail ? closeDetail : closeSheet;
   const list = () => listById(draft.list_id);
   const goal = () => state.goals.find((g) => g.id == draft.goal_id);
 
@@ -1360,7 +1366,7 @@ function openTaskEditor(task, defaults = {}) {
     <textarea class="te-notes" id="te-notes" placeholder="Add your notes…">${esc(draft.notes || '')}</textarea>
     <button class="te-gcal" id="te-gcal">📅 Add to Google Calendar</button>
     ${task ? '<button class="te-delete" id="te-del">Delete task</button>' : ''}`;
-  openSheet();
+  openHost();
 
   // Google Calendar "add event" link — pure client, needs no server setup.
   const syncGcalBtn = () => { const b = $('#te-gcal'); if (b) b.classList.toggle('hidden', !draft.due_at); };
@@ -1462,7 +1468,7 @@ function openTaskEditor(task, defaults = {}) {
   $('#te-chips').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-chip]'); if (!b) return;
     const key = b.dataset.chip;
-    if (key === 'complete') { await api('POST', `/tasks/${task.id}/toggle`); closeSheet(); if (!draft.done) { celebrate(); toast(encourage()); } refreshMeta().then(render); return; }
+    if (key === 'complete') { await api('POST', `/tasks/${task.id}/toggle`); closeHost(); if (!draft.done) { celebrate(); toast(encourage()); } refreshMeta().then(render); return; }
     if (key === 'myday') { draft.my_day_date = draft.my_day_date === todayStr() ? null : todayStr(); open = null; paintChips(); paintExpand(); toast(draft.my_day_date ? 'Added to My Day ◎' : 'Removed from My Day'); return; }
     open = open === key ? null : key; paintChips(); paintExpand();
   });
@@ -1548,9 +1554,9 @@ function openTaskEditor(task, defaults = {}) {
         if (s.done && created?.id) await api('POST', '/tasks/' + created.id + '/toggle');
       }
     }
-    closeSheet(); toast(task ? 'Saved' : 'Added ✓'); refreshMeta().then(render);
+    closeHost(); toast(task ? 'Saved' : 'Added ✓'); refreshMeta().then(render);
   });
-  $('#te-del')?.addEventListener('click', async () => { await api('DELETE', '/tasks/' + task.id); closeSheet(); toast('Deleted'); refreshMeta().then(render); });
+  $('#te-del')?.addEventListener('click', async () => { await api('DELETE', '/tasks/' + task.id); closeHost(); toast('Deleted'); refreshMeta().then(render); });
 }
 
 // ---------------------------------------------------------------- goal & list editors
@@ -1880,6 +1886,13 @@ function closeSheet() { $('#sheet').classList.add('hidden'); $('#sheet-body').in
 $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
 $('#fab').addEventListener('click', openCapture);
 $('#add-btn').addEventListener('click', openCapture); // header "+" (>=768)
+
+// Desktop task-detail panel (Phase 3). `detail-open` drives the slide-over
+// (768-1199) and shows the close button; >=1200 the panel is always in the grid.
+function openDetail() { document.body.classList.add('detail-open'); }
+function closeDetail() { document.body.classList.remove('detail-open'); $('#detail-body').innerHTML = '<div class="detail-empty">Select a task to see its details.</div>'; }
+$('#detail-close').addEventListener('click', closeDetail);
+$('#detail-scrim').addEventListener('click', closeDetail);
 
 // ---------------------------------------------------------------- sidebar (>=768)
 // Rendered on every render() so active state + list counts stay in sync. It's
