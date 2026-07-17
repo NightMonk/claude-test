@@ -274,7 +274,11 @@ button { cursor: pointer; }
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); margin-bottom: 8px;
   box-shadow: var(--shadow-sm);
 }
-.list-emoji { font-size: var(--fs-2); width: 28px; text-align: center; }
+.list-emoji { font-size: var(--fs-2); width: 28px; text-align: center; display: inline-flex; align-items: center; justify-content: center; }
+/* Colored list dot on the Lists tab (sits in the 28px marker slot). */
+.list-dot-lg { width: 14px; height: 14px; border-radius: 50%; background: var(--dot, var(--ink-3)); flex: none; }
+/* Colored dot before a list's name in the detail header. */
+.title-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
 .list-name { flex: 1; font-weight: 650; }
 .list-count { color: var(--ink-2); font-size: var(--fs-5); font-weight: 600; background: var(--surface-2); padding: 2px 8px; border-radius: var(--r-chip); }
 

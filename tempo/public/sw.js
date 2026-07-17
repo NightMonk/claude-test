@@ -1,6 +1,6 @@
 // Service worker: installable offline shell + Web Push reminders.
 // API calls always go to the network (your private data is never cached).
-const CACHE = 'tempo-shell-v15';
+const CACHE = 'tempo-shell-v16';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/vendor/chrono.min.js',
   '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 

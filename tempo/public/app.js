@@ -490,8 +490,9 @@ async function renderLists() {
   v.appendChild(el(`<div class="list-row" data-somedayopen><span class="list-emoji">🌙</span><span class="list-name">Someday</span><span class="list-count">${someday.length}</span></div>`));
   v.appendChild(el(`<div class="section-label">Your lists</div>`));
   for (const l of lists) {
+    // Colored dot as the list's identity, matching the pickers and task cards.
     v.appendChild(el(`<div class="list-row" data-listopen="${l.id}">
-      <span class="list-emoji">${esc(l.emoji || '•')}</span>
+      <span class="list-emoji"><span class="list-dot-lg" style="--dot:${esc(l.color)}"></span></span>
       <span class="list-name">${esc(l.name)}</span>
       <span class="list-count">${l.open_count}</span></div>`));
   }
@@ -502,7 +503,7 @@ async function renderLists() {
 
 async function renderListDetail(id) {
   const l = listById(id) || (await api('GET', '/lists')).find((x) => x.id === id);
-  $('#title').textContent = (l?.emoji ? l.emoji + ' ' : '') + (l?.name || 'List');
+  $('#title').innerHTML = `${l?.color ? `<span class="title-dot" style="background:${esc(l.color)}"></span>` : ''}${esc(l?.name || 'List')}`;
   const tasks = await api('GET', '/tasks?list=' + id);
   const v = $('#view'); v.innerHTML = '';
   const open = tasks.filter((t) => !t.done), done = tasks.filter((t) => t.done);
@@ -1579,11 +1580,9 @@ function openGoalEditor(goal) {
 function openListEditor(list) {
   const l = list || { color: '#5C6470', emoji: '' };
   const body = $('#sheet-body');
+  // Lists identify by colour now (no emoji), consistent with the dot everywhere.
   body.innerHTML = `<h2>${list ? 'Edit list' : 'New list'}</h2>
-    <div class="row2">
-      <div class="field"><label>Emoji</label><input type="text" id="l-emoji" value="${esc(l.emoji || '')}" maxlength="2" placeholder="📋" /></div>
-      <div class="field"><label>Name</label><input type="text" id="l-name" value="${esc(l.name || '')}" placeholder="e.g. Errands" /></div>
-    </div>
+    <div class="field"><label>Name</label><input type="text" id="l-name" value="${esc(l.name || '')}" placeholder="e.g. Errands" /></div>
     <div class="field"><label>Colour</label><div class="chips" id="l-color">
       ${['#5C6470', '#2F6B55', '#C05E3B', '#B98207', '#6366F1', '#C4453C'].map((c) => `<button class="chip-btn ${l.color === c ? 'on' : ''}" data-color="${c}" style="background:${c};color:#fff;border-color:${c}">●</button>`).join('')}</div></div>
     <div class="sheet-actions"><button class="btn-primary" id="l-save">${list ? 'Save' : 'Add list'}</button>
@@ -1593,7 +1592,7 @@ function openListEditor(list) {
   $('#l-color').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; color = b.dataset.color; $('#l-color').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); });
   $('#l-save').addEventListener('click', async () => {
     const name = $('#l-name').value.trim(); if (!name) { toast('Name it'); return; }
-    const payload = { name, emoji: $('#l-emoji').value.trim() || null, color };
+    const payload = { name, color }; // emoji retired; existing values left untouched
     if (list) await api('PATCH', '/lists/' + list.id, payload); else await api('POST', '/lists', payload);
     closeSheet(); toast(list ? 'Saved' : 'List added'); if (list) state.sub = null; refreshMeta().then(render);
   });
