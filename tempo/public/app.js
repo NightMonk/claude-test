@@ -307,6 +307,9 @@ async function render() {
   $('#back-btn').classList.toggle('hidden', !state.sub);
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === state.tab && !state.sub));
   renderSidebar(); // keep the >=768 sidebar's active state + lists in sync
+  // Week-grid view wants full width, so >=1200 it drops the reserved detail
+  // column (detail falls back to a slide-over there). Phase 4.
+  document.getElementById('app').classList.toggle('week-mode', state.tab === 'upcoming' && !state.sub);
   try {
     if (state.sub?.type === 'list') return renderListDetail(state.sub.id);
     if (state.sub?.type === 'goal') return renderGoalDetail(state.sub.id);
@@ -440,6 +443,9 @@ async function renderUpcoming() {
   const ahead = todayTasks.filter((t) => !t.done).length + rangeTasks.filter((t) => !t.done).length;
   v.appendChild(el(`<div class="greet">Next 7 days · ${ahead} task${ahead !== 1 ? 's' : ''} ahead</div>`));
 
+  // The 7 day sections live in a wrapper that is `display: contents` on mobile
+  // (they stack exactly as before) and a 7-column grid at >=1024px (Phase 4).
+  const grid = el('<div class="up-grid"></div>');
   for (let i = 0; i < 7; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
     const k = ymd(d);
@@ -455,8 +461,9 @@ async function renderUpcoming() {
     evs.forEach((e) => section.appendChild(el(eventChip(e))));
     dayTasks.forEach((t) => section.appendChild(taskCard(t)));
     if (!dayTasks.length && !evs.length) section.appendChild(el(`<div class="up-empty">Nothing planned</div>`));
-    v.appendChild(section);
+    grid.appendChild(section);
   }
+  v.appendChild(grid);
 
   if (inbox.length) v.appendChild(el(`<div class="list-row up-inbox" data-inboxopen><span class="list-emoji">📥</span><span class="list-name">Inbox — undated captures</span><span class="list-count">${inbox.length}</span></div>`));
 }

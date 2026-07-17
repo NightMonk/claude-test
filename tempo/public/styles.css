@@ -788,9 +788,12 @@ button { cursor: pointer; }
 .detail-close { display: none; }
 .detail-empty { margin: auto; padding: 40px 24px; text-align: center; color: var(--ink-3); font-size: var(--fs-4); }
 .detail-inner { padding: 8px 24px 32px; }
+@media (min-width: 1200px) { :root { --detail-w: 380px; } }
 
-@media (min-width: 768px) and (max-width: 1199px) {
-  /* Slide-over from the right, over the 2-column layout. */
+/* Base for >=768: the detail panel is a right SLIDE-OVER. This is used at
+   768-1199 always, and at >=1200 only on the week-grid view (#app.week-mode),
+   which needs the full width. */
+@media (min-width: 768px) {
   .detail-col {
     display: flex; flex-direction: column; position: fixed; top: 0; right: 0; z-index: 45;
     height: 100%; width: min(440px, 92vw); background: var(--surface); border-left: 1px solid var(--line);
@@ -804,16 +807,16 @@ button { cursor: pointer; }
   .detail-empty { display: none; } /* no persistent empty state in slide-over mode */
 }
 
+/* >=1200 (except the week grid): the panel docks as a persistent 3rd column. */
 @media (min-width: 1200px) {
-  /* Three columns: sidebar | task list | persistent detail. */
-  #app { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--detail-w); }
-  .detail-col {
-    display: flex; flex-direction: column; height: 100%; overflow-y: auto;
-    border-left: 1px solid var(--line); background: var(--surface);
+  #app:not(.week-mode) { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--detail-w); }
+  #app:not(.week-mode) .detail-col {
+    position: static; transform: none; width: auto; height: 100%; z-index: auto; box-shadow: none;
+    transition: none;
   }
-  body.detail-open .detail-close { display: block; }
+  #app:not(.week-mode) .detail-scrim { display: none; }
+  #app:not(.week-mode) .detail-empty { display: flex; }
 }
-@media (min-width: 1200px) { :root { --detail-w: 380px; } }
 
 /* Shared detail-close chrome (positioned on desktop only). */
 @media (min-width: 768px) {
@@ -830,4 +833,33 @@ button { cursor: pointer; }
   :root { --app-max: 1440px; }
   #app { max-width: var(--app-max); margin: 0 auto; box-shadow: var(--shadow); }
   body { background: color-mix(in srgb, var(--bg) 82%, var(--ink)); } /* subtle backdrop behind the capped app */
+}
+
+/* =======================================================================
+   Phase 4 — Next 7 Days as a 7-column week grid (>=1024).
+   The wrapper is display:contents on mobile, so the day sections stack exactly
+   as before; at >=1024 it becomes a 7-column board with compact cards.
+   ======================================================================= */
+.up-grid { display: contents; }
+
+@media (min-width: 1024px) {
+  .up-grid {
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 10px; align-items: start; margin-top: 8px;
+  }
+  .up-grid .up-day { margin-bottom: 0; min-width: 0; }
+  /* Day header: stack label over date so the "+" never collides in a ~140px column. */
+  .up-grid .up-head > div { display: flex; flex-direction: column; min-width: 0; }
+  .up-grid .up-label { font-size: var(--fs-5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .up-grid .up-date { font-size: var(--fs-6); }
+  .up-grid .up-add { width: 26px; height: 26px; }
+  /* Compact cards: drop the action row and tighten so 7 columns stay legible. */
+  .up-grid .task { padding: 8px 10px; }
+  .up-grid .task-main { gap: 6px; }
+  .up-grid .check { width: 20px; height: 20px; font-size: var(--fs-6); }
+  .up-grid .task-title { font-size: var(--fs-5); line-height: 1.25; }
+  .up-grid .task-actions { display: none; }
+  .up-grid .task-meta { gap: 2px 6px; font-size: var(--fs-6); }
+  .up-grid .cal-event { padding: 6px 8px; }
+  .up-grid .up-empty { font-size: var(--fs-6); }
 }
