@@ -1126,44 +1126,149 @@ function parseDateFallback(title) {
   return { title, due_at: due, has_time: hasTime ? 1 : 0 };
 }
 
+// Date detection that also reports the matched span, so a Quick-Add chip can be
+// removed and its words returned to the plain title. chrono gives us index/text;
+// the offline fallback reports only that a date was found.
+function detectDate(text) {
+  if (window.TempoChrono) {
+    try {
+      const r = window.TempoChrono.parse(text, new Date(), { forwardDate: true })[0];
+      if (r) {
+        const d = r.start.date(); const hasTime = r.start.isCertain('hour');
+        return { due_at: hasTime ? `${ymd(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}` : ymd(d), has_time: hasTime ? 1 : 0, text: r.text, index: r.index };
+      }
+      return null;
+    } catch { /* fall through */ }
+  }
+  const fb = parseDateFallback(text);
+  return fb.due_at ? { due_at: fb.due_at, has_time: fb.has_time, text: null, index: -1, strippedTitle: fb.title } : null;
+}
+
+// Parse Quick-Add text into removable tokens. Like parseQuick, but each detected
+// thing becomes a chip descriptor. A token whose key is in `dismissed` is left in
+// the title as literal text (the user vetoed that parse). Returns the cleaned
+// title, the token list, and the resolved field values.
+function detectCaptureTokens(text, dismissed) {
+  let working = ` ${text} `;
+  const tokens = [];
+  const parsed = { due_at: null, has_time: 0, priority: 0, list_id: null, repeat: 'none', estimate_min: null };
+  const take = (m) => { working = working.replace(m, ' '); };
+
+  const lm = working.match(LIST_RE);
+  if (lm) {
+    const found = state.lists.find((l) => l.name.toLowerCase().replace(/\s/g, '') === lm[1].toLowerCase());
+    if (found) { const key = 'list:' + lm[0].toLowerCase(); if (!dismissed.has(key)) { parsed.list_id = found.id; tokens.push({ key, kind: 'list', label: found.name }); take(lm[0]); } }
+  }
+  const pm = working.match(/!(high|h|med|m|low|l|2|1)\b/i);
+  if (pm) {
+    const key = 'prio:' + pm[0].toLowerCase();
+    if (!dismissed.has(key)) { const p = pm[1].toLowerCase(); parsed.priority = /h|2/.test(p) ? 2 : /l/.test(p) ? 0 : 1; if (parsed.priority) tokens.push({ key, kind: 'prio', label: '⚡ ' + (parsed.priority === 2 ? 'High' : 'Medium') }); take(pm[0]); }
+  }
+  const em = working.match(/~\s*(\d+)\s*(m|min|h|hr)?/i);
+  if (em) {
+    const key = 'est:' + em[0].toLowerCase().replace(/\s/g, '');
+    if (!dismissed.has(key)) { parsed.estimate_min = /h/i.test(em[2] || '') ? Number(em[1]) * 60 : Number(em[1]); tokens.push({ key, kind: 'est', label: '⏱ ' + (parsed.estimate_min < 60 ? parsed.estimate_min + 'm' : (parsed.estimate_min / 60) + 'h') }); take(em[0]); }
+  }
+  const rWeekday = working.match(new RegExp(`\\bevery\\s+(?=(?:${WEEKDAY_RE})\\b)`, 'i'));
+  if (rWeekday) { const key = 'repeat:wd'; if (!dismissed.has(key)) { parsed.repeat = 'weekly'; tokens.push({ key, kind: 'repeat', label: '🔁 Weekly' }); take(rWeekday[0]); } }
+  else {
+    const rm = working.match(/\bevery\s+(day|week|month|year|morning)\b/i) || working.match(/\b(daily|weekly|monthly|annually|yearly)\b/i);
+    if (rm) { const key = 'repeat:' + rm[0].toLowerCase(); if (!dismissed.has(key)) { const w = (rm[1] || '').toLowerCase(); parsed.repeat = /day|dail|morning/.test(w) ? 'daily' : /week/.test(w) ? 'weekly' : /month/.test(w) ? 'monthly' : 'annual'; tokens.push({ key, kind: 'repeat', label: '🔁 ' + REPEAT_LABEL[parsed.repeat] }); take(rm[0]); } }
+  }
+  const dr = detectDate(working);
+  if (dr) {
+    const key = 'date:' + (dr.text ? dr.text.toLowerCase().trim() : 'set');
+    if (!dismissed.has(key)) {
+      parsed.due_at = dr.due_at; parsed.has_time = dr.has_time;
+      tokens.push({ key, kind: 'date', label: '📅 ' + dueLabel({ due_at: dr.due_at, has_time: dr.has_time }) });
+      working = dr.text ? working.slice(0, dr.index) + working.slice(dr.index + dr.text.length) : ` ${dr.strippedTitle} `;
+    }
+  }
+  const title = working.replace(/\s{2,}/g, ' ').replace(/\s+([,.!?])/g, '$1').trim();
+  return { title, tokens, parsed };
+}
+
+// Which "When" segment a date string maps to (else null for a specific date).
+function whenSegForDate(dateStr) {
+  const d = (dateStr || '').slice(0, 10);
+  if (d === todayStr()) return 'today';
+  if (d === ymd(new Date(Date.now() + 86400000))) return 'tomorrow';
+  return null;
+}
+
 function openCapture(opts = {}) {
   const body = $('#sheet-body');
+  // Layout, top→bottom: title · input · removable parse chips · helper · When ·
+  // List · Add-step · More options · full-width Add. "When" (destination) and
+  // "List" carry NO emoji; only the parse chips do (📅/⚡/⏱/🔁).
   body.innerHTML = `<h2 class="cap-h">I want to…</h2>
-    <input class="capture-input" id="cap" placeholder="e.g. Call dentist tomorrow 3pm !high" autocomplete="off" />
-    <div class="parse-hint" id="cap-hint">Just type — I'll pick out the date, list &amp; priority.</div>
-    <div class="chips" id="cap-quick">
-      <button class="chip-btn" data-q="myday">◎ My Day</button>
-      <button class="chip-btn" data-q="tomorrow">→ Tomorrow</button>
-      ${state.lists.map((l) => `<button class="chip-btn" data-ql="${l.id}">${esc(l.emoji || '')} ${esc(l.name)}</button>`).join('')}
+    <input class="capture-input" id="cap" placeholder="e.g. Call dentist tomorrow 3pm" autocomplete="off" autocapitalize="sentences" />
+    <div class="cap-chips" id="cap-chips"></div>
+    <div class="cap-help">Just type it out — I'll spot the date, list and priority for you.</div>
+    <div class="cap-field">
+      <div class="cap-label">When</div>
+      <div class="seg" id="cap-when" role="group" aria-label="When">
+        <button type="button" class="seg-btn" data-when="today">Today</button>
+        <button type="button" class="seg-btn" data-when="tomorrow">Tomorrow</button>
+        <button type="button" class="seg-btn" data-when="inbox">Inbox</button>
+      </div>
     </div>
-    <button class="cap-steps-toggle" id="cap-steps-toggle">＋ Break into steps</button>
+    <div class="cap-field">
+      <div class="cap-label">List</div>
+      <div class="pills" id="cap-lists" role="group" aria-label="List">
+        ${state.lists.map((l) => `<button type="button" class="pill" data-list="${l.id}" style="--dot:${esc(l.color)}"><span class="pill-dot"></span>${esc(l.name)}</button>`).join('')}
+        <button type="button" class="pill pill-add" id="cap-list-add" aria-label="New list">+</button>
+      </div>
+    </div>
+    <button type="button" class="cap-steps-toggle" id="cap-steps-toggle">＋ Add step</button>
     <div class="cap-steps hidden" id="cap-steps"></div>
-    <div class="sheet-actions cap-actions">
-      <button class="btn-ghost" id="cap-more">More options</button>
-      <button class="btn-primary" id="cap-add">Add</button>
-    </div>`;
+    <button type="button" class="cap-more" id="cap-more">More options</button>
+    <div class="cap-add-wrap"><button type="button" class="btn-primary cap-add-full" id="cap-add">Add</button></div>`;
   openSheet();
-  const input = $('#cap'); const hint = $('#cap-hint');
-  // Presets let a caller (e.g. Upcoming's per-day ＋) drop a task onto a date.
-  let forceList = opts.list ?? null, forceDue = opts.due ?? null, myDay = !!opts.myDay;
-  let steps = [];        // inline subtasks captured before saving
-  let stepsShown = false;
-  if (myDay) $('[data-q="myday"]').classList.add('on');
-  if (forceDue && forceDue === ymd(new Date(Date.now() + 86400000))) $('[data-q="tomorrow"]').classList.add('on');
-  if (forceList) $(`[data-ql="${forceList}"]`)?.classList.add('on');
-  setTimeout(() => { input.focus(); preview(); }, 60);
-  const preview = () => {
-    const p = parseQuick(input.value);
-    const bits = [];
-    if (myDay) bits.push('◎ My Day');
-    const due = forceDue || p.due_at;
-    if (due) bits.push('🗓 ' + esc(dueLabel({ due_at: due, has_time: p.has_time })));
-    if (p.priority) bits.push('❗ ' + (p.priority === 2 ? 'high' : 'med'));
-    const li = forceList || p.list_id; if (li) bits.push('#' + esc(listById(li)?.name || ''));
-    if (p.repeat !== 'none') bits.push('🔁 ' + p.repeat);
-    if (p.estimate_min) bits.push('⏱ ' + p.estimate_min + 'm');
-    hint.innerHTML = bits.length ? bits.map((b) => `<b>${b}</b>`).join(' &nbsp; ') : 'Just type — I\'ll pick out the date, list &amp; priority.';
-  };
+  const input = $('#cap');
+  // manualWhen: user tapped a When segment; forceList: a list pill ('none' = the
+  // user explicitly cleared it); dismissed: parse tokens the user removed.
+  let manualWhen = null, forceList = opts.list ?? null, presetDue = null;
+  const dismissed = new Set();
+  let steps = [], stepsShown = false, lastTokens = [];
+  if (opts.myDay) manualWhen = 'today';
+  else if (opts.due) { const seg = whenSegForDate(opts.due); if (seg) manualWhen = seg; else presetDue = opts.due; }
+
+  // Re-derive everything from the current text + user choices.
+  function recompute() {
+    const { tokens, parsed } = detectCaptureTokens(input.value, dismissed);
+    lastTokens = tokens;
+    // A live typed date always wins over a previous When tap.
+    if (tokens.some((t) => t.kind === 'date')) manualWhen = null;
+    // Parse chips (the list token is shown via the List pills instead).
+    $('#cap-chips').innerHTML = tokens.filter((t) => t.kind !== 'list')
+      .map((t) => `<button type="button" class="cap-chip" data-chipkey="${esc(t.key)}">${esc(t.label)}<span class="cap-chip-x" aria-hidden="true">✕</span></button>`).join('');
+    // When highlight: manual tap, else the typed/preset date, else default Today.
+    let sel = manualWhen || (parsed.due_at ? whenSegForDate(parsed.due_at) : (presetDue ? whenSegForDate(presetDue) : 'today'));
+    $('#cap-when').querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.when === sel));
+    // List highlight.
+    const li = forceList === 'none' ? null : (forceList ?? parsed.list_id);
+    $('#cap-lists').querySelectorAll('[data-list]').forEach((b) => b.classList.toggle('on', Number(b.dataset.list) === li));
+  }
+
+  input.addEventListener('input', recompute);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  // Remove a parse chip → its words stay in the plain title, unparsed.
+  $('#cap-chips').addEventListener('click', (e) => { const b = e.target.closest('[data-chipkey]'); if (!b) return; dismissed.add(b.dataset.chipkey); recompute(); });
+  // When: single-select. Tapping overrides any typed date (dismiss its chip).
+  $('#cap-when').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-when]'); if (!b) return;
+    manualWhen = b.dataset.when; presetDue = null;
+    const dt = lastTokens.find((t) => t.kind === 'date'); if (dt) dismissed.add(dt.key);
+    recompute();
+  });
+  // List: single-select pills; tapping the selected one clears it.
+  $('#cap-lists').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-list]'); if (!b) return;
+    const id = Number(b.dataset.list); forceList = (forceList === id) ? 'none' : id; recompute();
+  });
+  // "+" creates a new list (the only additive action here).
+  $('#cap-list-add').addEventListener('click', () => openListEditor());
 
   // Inline steps: a growing list of subtask inputs. Enter on the last blank row
   // adds another; empties are dropped on save.
@@ -1183,25 +1288,21 @@ function openCapture(opts = {}) {
   $('#cap-steps-toggle').addEventListener('click', () => {
     stepsShown = !stepsShown;
     $('#cap-steps').classList.toggle('hidden', !stepsShown);
-    $('#cap-steps-toggle').textContent = stepsShown ? '− Hide steps' : '＋ Break into steps';
+    $('#cap-steps-toggle').textContent = stepsShown ? '− Hide steps' : '＋ Add step';
     if (stepsShown) { if (!steps.length) steps.push(''); drawSteps(true); }
   });
 
-  input.addEventListener('input', preview);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-  $('#cap-quick').addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.q === 'myday') { myDay = !myDay; b.classList.toggle('on', myDay); }
-    else if (b.dataset.q) { forceDue = forceDue === ymd(new Date(Date.now() + 86400000)) ? null : ymd(new Date(Date.now() + 86400000)); document.querySelectorAll('[data-q="tomorrow"]').forEach((x) => x.classList.toggle('on', forceDue)); }
-    if (b.dataset.ql) { forceList = forceList === Number(b.dataset.ql) ? null : Number(b.dataset.ql); document.querySelectorAll('[data-ql]').forEach((x) => x.classList.toggle('on', Number(x.dataset.ql) === forceList)); }
-    preview();
-  });
-
+  // Resolve the typed text + choices into a task payload.
   const buildPayload = () => {
-    const p = parseQuick(input.value);
-    if (forceList) p.list_id = forceList;
-    if (forceDue && !p.due_at) { p.due_at = forceDue; p.has_time = 0; }
-    if (myDay) p.my_day_date = todayStr();
+    const { title, parsed } = detectCaptureTokens(input.value, dismissed);
+    const p = { title, due_at: parsed.due_at, has_time: parsed.has_time, priority: parsed.priority, repeat: parsed.repeat, estimate_min: parsed.estimate_min, list_id: null, my_day_date: null };
+    p.list_id = (forceList === 'none' ? null : (forceList ?? parsed.list_id)) || null;
+    if (parsed.due_at) { /* typed date wins; keep p.due_at/has_time */ }
+    else if (manualWhen === 'inbox') { /* undated */ }
+    else if (manualWhen === 'tomorrow') { p.due_at = ymd(new Date(Date.now() + 86400000)); p.has_time = 0; }
+    else if (manualWhen === 'today') { p.my_day_date = todayStr(); }
+    else if (presetDue) { if (presetDue.slice(0, 10) === todayStr()) p.my_day_date = todayStr(); else { p.due_at = presetDue; p.has_time = 0; } }
+    else { p.my_day_date = todayStr(); } // default = Today
     return p;
   };
   // Hand off everything typed so far to the full editor — no data lost.
@@ -1219,6 +1320,8 @@ function openCapture(opts = {}) {
     closeSheet(); toast(clean.length ? `Added with ${clean.length} step${clean.length > 1 ? 's' : ''} ✓` : 'Added ✓'); refreshMeta().then(render);
   }
   $('#cap-add').addEventListener('click', submit);
+
+  setTimeout(() => { input.focus(); recompute(); }, 60);
 }
 
 // ---------------------------------------------------------------- task editor
