@@ -52,6 +52,18 @@
   --r-chip: 999px;
   --r-sheet: 24px;
   --tabh: 62px;
+
+  /* -- responsive breakpoints (Phase 1) --
+     NOTE: CSS var() can't be used inside @media conditions, so media queries
+     below use these literal px values; the vars mirror them for JS (see
+     /debuggrid) and as the single source of truth. Mobile-first, min-width. */
+  --bp-sm: 480px;   /* large phones */
+  --bp-md: 768px;   /* sidebar + modal; lift the mobile column cap */
+  --bp-lg: 1024px;  /* week grid; two-pane */
+  --bp-xl: 1280px;  /* three-pane (rail + list + detail) */
+  --bp-xxl: 1440px; /* cap + center content */
+  /* The mobile column cap, tokenized so later phases widen it in one place. */
+  --content-max: 680px;
 }
 
 :root[data-theme="paper"] {
@@ -93,7 +105,10 @@
 /* ======================= components (tokens only) ======================= */
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; }
+/* No horizontal scrollbar at any width. `clip` (not `hidden`) avoids creating a
+   scroll container, so the sticky header keeps working; older engines fall back
+   to visible harmlessly since nothing overflows today. */
+html, body { margin: 0; height: 100%; overflow-x: clip; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -136,7 +151,7 @@ button { cursor: pointer; }
 }
 
 /* ---- app shell ---- */
-#app { max-width: 680px; margin: 0 auto; min-height: 100vh; padding-bottom: calc(var(--tabh) + env(safe-area-inset-bottom)); }
+#app { max-width: var(--content-max); margin: 0 auto; min-height: 100vh; padding-bottom: calc(var(--tabh) + env(safe-area-inset-bottom)); }
 .topbar {
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; gap: 8px;
@@ -160,7 +175,7 @@ button { cursor: pointer; }
 /* ---- bottom tab bar ---- */
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
-  max-width: 680px; margin: 0 auto;
+  max-width: var(--content-max); margin: 0 auto;
   display: grid; grid-template-columns: repeat(5, 1fr);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: saturate(1.4) blur(12px);
@@ -323,7 +338,7 @@ button { cursor: pointer; }
 }
 @keyframes fade { from { opacity: 0; } }
 .sheet {
-  background: var(--surface); width: 100%; max-width: 680px;
+  background: var(--surface); width: 100%; max-width: var(--content-max);
   border-radius: var(--r-sheet) var(--r-sheet) 0 0; padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
   max-height: 92vh; overflow-y: auto; animation: slideup .26s cubic-bezier(.2,.9,.3,1);
 }
