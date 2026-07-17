@@ -1,6 +1,6 @@
 // Service worker: installable offline shell + Web Push reminders.
 // API calls always go to the network (your private data is never cached).
-const CACHE = 'tempo-shell-v22';
+const CACHE = 'tempo-shell-v23';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/vendor/chrono.min.js',
   '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
@@ -22,7 +22,11 @@ self.addEventListener('fetch', (e) => {
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
       return res;
-    }).catch(() => cached))
+    }).catch(() =>
+      // Offline fallback: for a page navigation with nothing cached, serve the
+      // app shell so Tempo still opens; otherwise fail as usual.
+      cached || (e.request.mode === 'navigate' ? caches.match('/index.html') : undefined)
+    ))
   );
 });
 

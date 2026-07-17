@@ -13,6 +13,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 let TOKEN = localStorage.getItem('tempo_token') || '';
+let deferredPrompt = null; // captured beforeinstallprompt (custom PWA install)
 const state = { tab: 'today', lists: [], goals: [], sub: null, calMode: 'month', calDate: new Date(), calSel: todayStr(), todayFilter: 'all', settings: {}, completedOpen: false, aiEnabled: false };
 const expanded = new Set();       // task ids showing their sub-tasks
 const notified = new Set();       // reminder ids already fired this session
@@ -1924,6 +1925,7 @@ function renderSidebar() {
   }
   h += `<button class="side-item" data-side="newlist"><span class="side-ic">＋</span><span class="side-label">New list</span></button>`;
   h += `<div class="side-spacer"></div>`;
+  if (deferredPrompt) h += `<button class="side-item side-install" data-side="install"><span class="side-ic">⬇</span><span class="side-label">Install Tempo</span></button>`;
   h += `<button class="side-item" data-side="theme"><span class="side-ic">◐</span><span class="side-label">Theme: ${esc(THEMES.find((x) => x.id === themeId())?.name || '')}</span></button>`;
   h += subItem('settings', '⚙', 'Settings');
   sb.innerHTML = h;
@@ -1932,6 +1934,7 @@ $('#sidebar').addEventListener('click', (e) => {
   const b = e.target.closest('[data-side]'); if (!b) return;
   const k = b.dataset.side;
   if (k === 'newlist') return openListEditor();
+  if (k === 'install') { if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt.userChoice.finally(() => { deferredPrompt = null; renderSidebar(); }); } return; }
   if (k === 'theme') { const next = THEMES[(THEMES.findIndex((x) => x.id === themeId()) + 1) % THEMES.length]; setTheme(next.id); toast('Theme: ' + next.name); renderSidebar(); return; }
   if (k === 'list') { state.sub = { type: 'list', id: Number(b.dataset.id) }; return render().then(animateView); }
   if (['inbox', 'someday', 'archive', 'settings'].includes(k)) { state.sub = { type: k }; return render().then(animateView); }
@@ -2023,6 +2026,12 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'Enter') { const t = selectedTaskEl(); if (t) { e.preventDefault(); openTaskEditorById(Number(t.dataset.id)); } }
   else if (k === 'e' || k === 'E') { const t = selectedTaskEl(); if (t) { e.preventDefault(); toggleTask(Number(t.dataset.id)); } }
 });
+
+// ---------------------------------------------------------------- PWA install
+// Capture the install prompt so we can offer our own "Install Tempo" button
+// (in the sidebar) instead of the browser's default mini-infobar.
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; renderSidebar(); });
+window.addEventListener('appinstalled', () => { deferredPrompt = null; renderSidebar(); });
 
 // ---------------------------------------------------------------- start
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

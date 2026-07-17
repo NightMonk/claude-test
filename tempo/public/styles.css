@@ -890,3 +890,34 @@ button { cursor: pointer; }
   .up-grid .cal-event { padding: 6px 8px; }
   .up-grid .up-empty { font-size: var(--fs-6); }
 }
+
+/* =======================================================================
+   Phase 6 — PWA desktop polish.
+   ======================================================================= */
+.side-install .side-ic { color: var(--accent); }
+.side-install { color: var(--accent); font-weight: 700; }
+
+/* Window-controls-overlay: let the top strip be draggable and clear the
+   OS window controls that draw over the app. */
+@media (display-mode: window-controls-overlay) {
+  .sidebar { padding-top: max(env(titlebar-area-height, 16px), 16px); }
+  .topbar { -webkit-app-region: drag; app-region: drag; }
+  .topbar button, .topbar input { -webkit-app-region: no-drag; app-region: no-drag; }
+}
+
+/* Content-driven tweak via a container query on the scroll area (proves the
+   layout responds to its OWN width, not just the viewport). */
+#view { container: view / inline-size; }
+@container view (max-width: 320px) {
+  .today-actions { flex-direction: column; }
+  .filters { gap: 6px; }
+}
+
+/* Very small PWA windows (down to ~200x100): shed non-essential chrome so the
+   task list stays usable. */
+@media (max-width: 380px) { #view { padding: 12px 12px 20px; } }
+@media (max-height: 480px) {
+  .week-strip, .greet { display: none; }
+  .topbar { padding-top: max(env(safe-area-inset-top), 6px); padding-bottom: 6px; }
+  #view { padding-top: 10px; }
+}
