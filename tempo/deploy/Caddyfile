@@ -1,0 +1,8 @@
+# Tempo reverse proxy with automatic HTTPS.
+# Put this at /etc/caddy/Caddyfile, replace the domain, then: systemctl reload caddy
+# Caddy fetches & auto-renews a free Let's Encrypt certificate for the domain.
+
+tempo.falkconsulting.co.uk {
+    encode zstd gzip
+    reverse_proxy localhost:3000
+}
