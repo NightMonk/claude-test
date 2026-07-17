@@ -1979,6 +1979,51 @@ setInterval(async () => {
   } catch { /* offline — ignore */ }
 }, 45000);
 
+// ---------------------------------------------------------------- keyboard (desktop)
+// Shortcuts are a no-op on touch: navigation keys are gated behind a fine
+// pointer, and only Esc/typing-guards run otherwise.
+const kbdActive = () => window.matchMedia('(pointer: fine)').matches;
+const visibleTasks = () => [...document.querySelectorAll('#view .task[data-id]')];
+const selectedTaskEl = () => document.querySelector('#view .task.selected[data-id]');
+function moveSelection(dir) {
+  const tasks = visibleTasks(); if (!tasks.length) return;
+  let idx = tasks.findIndex((t) => t.classList.contains('selected'));
+  idx = idx < 0 ? (dir > 0 ? 0 : tasks.length - 1) : Math.max(0, Math.min(tasks.length - 1, idx + dir));
+  tasks.forEach((t) => t.classList.remove('selected'));
+  tasks[idx].classList.add('selected');
+  tasks[idx].scrollIntoView({ block: 'nearest' });
+}
+function anyOverlayOpen() {
+  return !$('#sheet').classList.contains('hidden') || document.body.classList.contains('detail-open')
+    || !$('#focus').classList.contains('hidden') || !$('#plan').classList.contains('hidden')
+    || !$('#review').classList.contains('hidden') || !$('#shortcuts').classList.contains('hidden');
+}
+function closeTopmost() {
+  if (!$('#shortcuts').classList.contains('hidden')) { $('#shortcuts').classList.add('hidden'); return true; }
+  if (!$('#sheet').classList.contains('hidden')) { closeSheet(); return true; }
+  if (document.body.classList.contains('detail-open')) { closeDetail(); return true; }
+  for (const id of ['#focus', '#plan', '#review']) { const o = $(id); if (o && !o.classList.contains('hidden')) { o.classList.add('hidden'); if (id === '#focus') clearInterval(fxTimer); return true; } }
+  return false;
+}
+$('#shortcuts-x').addEventListener('click', () => $('#shortcuts').classList.add('hidden'));
+$('#shortcuts').addEventListener('click', (e) => { if (e.target.id === 'shortcuts') $('#shortcuts').classList.add('hidden'); });
+document.addEventListener('keydown', (e) => {
+  if (!TOKEN) return;
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+  // Esc closes the topmost overlay even when a field inside it has focus;
+  // otherwise (plain typing) it just blurs the field.
+  if (e.key === 'Escape') { if (anyOverlayOpen()) { if (closeTopmost()) e.preventDefault(); } else if (typing) e.target.blur(); return; }
+  if (typing || !kbdActive() || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (k === '?') { e.preventDefault(); $('#shortcuts').classList.toggle('hidden'); return; }
+  if (anyOverlayOpen()) return;
+  if (k === 'q' || k === 'Q' || k === 'n' || k === 'N') { e.preventDefault(); openCapture(); }
+  else if (k === 'j' || k === 'J' || k === 'ArrowDown') { e.preventDefault(); moveSelection(1); }
+  else if (k === 'k' || k === 'K' || k === 'ArrowUp') { e.preventDefault(); moveSelection(-1); }
+  else if (k === 'Enter') { const t = selectedTaskEl(); if (t) { e.preventDefault(); openTaskEditorById(Number(t.dataset.id)); } }
+  else if (k === 'e' || k === 'E') { const t = selectedTaskEl(); if (t) { e.preventDefault(); toggleTask(Number(t.dataset.id)); } }
+});
+
 // ---------------------------------------------------------------- start
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 if (TOKEN) boot(); else showLogin();

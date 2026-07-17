@@ -86,6 +86,23 @@
   <!-- Full-screen weekly review -->
   <div id="review" class="focus-overlay hidden"></div>
 
+  <!-- Keyboard shortcuts overlay (desktop; toggled with ?) -->
+  <div id="shortcuts" class="shortcuts-overlay hidden">
+    <div class="shortcuts-card">
+      <button class="fx-close" id="shortcuts-x" aria-label="Close">×</button>
+      <h2>Keyboard shortcuts</h2>
+      <dl class="shortcuts-list">
+        <dt>Q / N</dt><dd>New task (quick-add)</dd>
+        <dt>J / ↓</dt><dd>Move selection down</dd>
+        <dt>K / ↑</dt><dd>Move selection up</dd>
+        <dt>Enter</dt><dd>Open / edit selected task</dd>
+        <dt>E</dt><dd>Complete selected task</dd>
+        <dt>Esc</dt><dd>Close panel / modal</dd>
+        <dt>?</dt><dd>Show this help</dd>
+      </dl>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
   <div id="confetti" class="confetti hidden"></div>
 

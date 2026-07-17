@@ -836,6 +836,33 @@ button { cursor: pointer; }
 }
 
 /* =======================================================================
+   Phase 5 — pointer / keyboard / focus (desktop).
+   Hover is gated behind a fine pointer so touch is never affected; every hover
+   has a tap equivalent. Keyboard selection gets a visible ring.
+   ======================================================================= */
+@media (hover: hover) and (pointer: fine) {
+  .task:hover { border-color: color-mix(in srgb, var(--ink) 16%, var(--line)); }
+  .list-row:hover { background: var(--surface-2); }
+  .goal-card:hover, .up-day .up-head:hover { background: color-mix(in srgb, var(--surface) 60%, var(--line-2)); }
+  .chip-btn:hover, .mini-btn:hover, .pill:hover, .seg-btn:hover, .te-chip:hover,
+  .pill-action:hover, .cal-event:hover, .completed-head:hover { border-color: var(--ink-3); }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-ghost:hover { background: var(--line-2); }
+  .cursor-pointer, .task-title, .side-item, .list-row, [data-side], [data-listopen],
+  [data-goalopen], .day-cell, .year-month { cursor: pointer; }
+}
+/* Keyboard selection ring on the current task (J/K navigation). */
+.task.selected { box-shadow: var(--focus-ring); border-color: var(--focus); }
+
+/* Shortcuts overlay */
+.shortcuts-overlay { position: fixed; inset: 0; z-index: 80; background: var(--scrim); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fade .2s ease; }
+.shortcuts-card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); padding: 28px 28px 20px; width: 100%; max-width: 380px; box-shadow: var(--shadow); }
+.shortcuts-card h2 { margin: 0 0 16px; font-size: var(--fs-2); }
+.shortcuts-list { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; margin: 0; }
+.shortcuts-list dt { font-weight: 700; font-family: var(--mono); font-size: var(--fs-5); color: var(--accent); white-space: nowrap; }
+.shortcuts-list dd { margin: 0; font-size: var(--fs-4); color: var(--ink-2); }
+
+/* =======================================================================
    Phase 4 — Next 7 Days as a 7-column week grid (>=1024).
    The wrapper is display:contents on mobile, so the day sections stack exactly
    as before; at >=1024 it becomes a 7-column board with compact cards.
