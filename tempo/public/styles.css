@@ -528,6 +528,12 @@ button { cursor: pointer; }
 .set-sub { padding: 12px 0 8px; border-top: 1px solid var(--line-2); margin-top: 4px; }
 .feed-url { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .feed-url code { flex: 1; font-size: var(--fs-6); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px; overflow-x: auto; white-space: nowrap; }
+/* Smart-features credential entry */
+.key-entry { display: flex; gap: 8px; align-items: center; margin: 8px 0 2px; }
+.key-entry input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); font-size: var(--fs-5); }
+.key-entry input:focus { outline: none; border-color: var(--focus); box-shadow: var(--focus-ring); }
+.key-entry .btn-primary { flex: none; padding: 10px 16px; }
+.key-ok { color: var(--ok); font-weight: 700; font-size: var(--fs-5); }
 .cal-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: var(--fs-4); border-bottom: 1px solid var(--line-2); }
 .cal-item:last-child { border-bottom: none; }
 .google-row { display: flex; align-items: center; gap: 8px; padding: 4px 0 12px; border-bottom: 1px solid var(--line-2); margin-bottom: 8px; font-size: var(--fs-4); flex-wrap: wrap; }

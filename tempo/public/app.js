@@ -638,7 +638,7 @@ function gcalUrl(task) {
 async function renderSettings() {
   $('#title').textContent = 'Settings';
   const s = state.settings = await api('GET', '/settings');
-  const [cals, gstatus] = await Promise.all([api('GET', '/calendars'), api('GET', '/google/status')]);
+  const [cals, gstatus, secrets] = await Promise.all([api('GET', '/calendars'), api('GET', '/google/status'), api('GET', '/secrets/status')]);
   const v = $('#view'); v.innerHTML = '';
   const pushOn = ('Notification' in window) && Notification.permission === 'granted' && await hasPushSub();
 
@@ -670,6 +670,68 @@ async function renderSettings() {
       <input type="time" id="q-end" value="${s.quiet_end || ''}" style="width:104px"></div></div>
   </div>`);
   v.appendChild(notif);
+
+  // ---- Smart features: paste credentials into the app (nothing committed) ----
+  let sec = secrets;
+  v.appendChild(el(`<div class="section-label">Smart features</div>`));
+  const smart = el(`<div class="settings-card">
+    <div class="set-row"><span>✨ AI assistant<br><small class="muted">Suggest steps · Improve wording · Note → tasks</small></span><span id="ai-state"></span></div>
+    <div id="ai-entry"></div>
+    <div class="set-sub"><b>Google Calendar sync (optional)</b><br>
+      <small class="muted">Two-way sync needs a Google OAuth client — see GCAL_SETUP.md. Register this exact redirect URI in Google Cloud:</small>
+      <div class="feed-url"><code id="gc-redirect">${esc(location.origin)}/api/google/callback</code><button class="chip-btn" id="copy-redirect">Copy</button></div>
+      <div id="gc-entry"></div>
+    </div>
+  </div>`);
+  v.appendChild(smart);
+  $('#copy-redirect').addEventListener('click', () => { navigator.clipboard?.writeText(`${location.origin}/api/google/callback`); toast('Redirect URI copied'); });
+
+  function paintAI() {
+    const st = $('#ai-state'), entry = $('#ai-entry');
+    if (sec.anthropic.set) {
+      st.innerHTML = `<span class="key-ok">key set ✓</span>`;
+      entry.innerHTML = `<div class="set-row"><span class="muted" style="font-size:13px">Stored: <code>${esc(sec.anthropic.hint || '')}</code> · never shown in full</span>
+        <button class="chip-btn btn-danger" id="ai-remove">Remove</button></div>`;
+      $('#ai-remove').addEventListener('click', async () => {
+        await api('DELETE', '/secrets/anthropic'); const r = await api('GET', '/secrets/status'); sec = r;
+        toast('AI key removed'); await refreshMeta(); paintAI();
+      });
+    } else {
+      st.innerHTML = `<span class="muted" style="font-size:13px">off</span>`;
+      entry.innerHTML = `<div class="key-entry"><input type="password" id="ai-key" placeholder="Paste Anthropic key (sk-ant-…)" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" />
+        <button class="btn-primary" id="ai-save">Save</button></div>
+        <small class="muted" style="font-size:12px;display:block;margin-top:6px">Get one at console.anthropic.com → API keys. Stored only on your server; never sent back to this screen.</small>`;
+      $('#ai-save').addEventListener('click', async () => {
+        const key = $('#ai-key').value.trim(); if (!key) { toast('Paste your key first'); return; }
+        const btn = $('#ai-save'); btn.disabled = true; btn.textContent = 'Checking…';
+        try {
+          const r = await api('PATCH', '/secrets', { anthropic_api_key: key });
+          sec = r.status; toast((r.notes && r.notes[0]) || 'Saved ✓'); await refreshMeta(); paintAI();
+        } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = 'Save'; }
+      });
+    }
+  }
+
+  function paintGC() {
+    const g = $('#gc-entry');
+    const idSet = sec.google.client_id_set, secSet = sec.google.client_secret_set;
+    g.innerHTML = `
+      <div class="key-entry"><input type="text" id="gc-id" placeholder="Client ID (…apps.googleusercontent.com)" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>
+      <div class="key-entry"><input type="password" id="gc-secret" placeholder="Client secret (GOCSPX-…)" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>
+      <div class="set-row"><span class="muted" style="font-size:12px">${idSet ? 'ID set ✓' : 'ID not set'} · ${secSet ? 'secret set ✓' : 'secret not set'}</span>
+        <span style="display:flex;gap:6px">${(idSet || secSet) ? '<button class="chip-btn btn-danger" id="gc-remove">Remove</button>' : ''}<button class="btn-primary" id="gc-save">Save</button></span></div>`;
+    $('#gc-save').addEventListener('click', async () => {
+      const id = $('#gc-id').value.trim(), secret = $('#gc-secret').value.trim();
+      if (!id && !secret) { toast('Paste your Client ID and secret'); return; }
+      const body = {}; if (id) body.google_client_id = id; if (secret) body.google_client_secret = secret;
+      try { await api('PATCH', '/secrets', body); toast('Google credentials saved'); await refreshMeta(); render(); }
+      catch (e) { toast(e.message); }
+    });
+    $('#gc-remove')?.addEventListener('click', async () => {
+      await api('DELETE', '/secrets/google'); toast('Google credentials removed'); await refreshMeta(); render();
+    });
+  }
+  paintAI(); paintGC();
 
   v.appendChild(el(`<div class="section-label">Calendar sync</div>`));
   const googleBlock = gstatus.connected

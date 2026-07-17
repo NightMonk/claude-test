@@ -20,11 +20,27 @@ set -uo pipefail
 
 SERVER_IP="144.21.51.57"
 DOMAIN="tempo.falkconsulting.co.uk"
-EXPECT_SW="tempo-shell-v12"          # the cache tag this release should ship
+EXPECT_SW="tempo-shell-v13"          # the cache tag this release should ship
 KEY="$HOME/.ssh/tempo_deploy_$$"
 step() { printf '\n\033[1m==== STEP %s ====\033[0m %s\n' "$1" "$2"; }
 info() { printf '     %s\n' "$*"; }
 ok()   { printf '  \033[32m[ok]\033[0m %s\n' "$*"; }
+# Pull the first ocid1.<type>… out of a blob. OCI sometimes prints usage/help
+# text alongside output; grepping the OCID avoids capturing that noise (which
+# otherwise poisoned $BID/$SID and caused false positives + 404s).
+ocid_of() { grep -oE "ocid1\\.$1\\.oc1[a-z0-9._-]+" | head -1; }
+# Poll a resource's lifecycle-state to ACTIVE ourselves (some create subcommands
+# reject --wait-for-state). Args: <get-subcommand> <id-flag> <id>.
+wait_active() {
+  local sub="$1" flag="$2" id="$3" i st
+  for i in $(seq 1 40); do
+    st=$(oci $sub $flag "$id" --query 'data."lifecycle-state"' --raw-output 2>/dev/null || true)
+    [ "$st" = "ACTIVE" ] && return 0
+    if [ "$st" = "FAILED" ] || [ "$st" = "DELETED" ]; then return 1; fi
+    printf '.'; sleep 5
+  done
+  return 1
+}
 
 # planB <title> then heredoc on stdin. Prints a bordered block and exits 1 —
 # so you always leave with a concrete next action, never a bare error.
@@ -135,16 +151,23 @@ ok "Bastion plugin is RUNNING"
 
 # --------------------------------------------------------- 5. ensure a Bastion
 step "5/8" "Making sure a Bastion exists on your VCN"
+# Reuse an existing tempo-bastion if present (defensively extract the OCID).
 BID=$(oci bastion bastion list --compartment-id "$COMP" \
-      --query "data[?\"lifecycle-state\"=='ACTIVE'] | [?name=='tempo-bastion'].id | [0]" \
-      --raw-output 2>/dev/null || true)
-if [ -z "$BID" ] || [ "$BID" = "null" ]; then
-  info "No 'tempo-bastion' yet — creating one (Always-Free includes this)…"
+      --query "data[?name=='tempo-bastion' && \"lifecycle-state\"=='ACTIVE'].id | [0]" \
+      --raw-output 2>/dev/null | ocid_of bastion)
+if [ -z "$BID" ]; then
+  info "No active 'tempo-bastion' yet — creating one (Always-Free includes this)…"
+  # Create WITHOUT --wait-for-state, then poll lifecycle ourselves.
   BID=$(oci bastion bastion create --bastion-type standard --compartment-id "$COMP" \
         --target-subnet-id "$SUBNET" --name tempo-bastion --client-cidr-list '["0.0.0.0/0"]' \
-        --wait-for-state ACTIVE --query 'data.id' --raw-output 2>/dev/null || true)
+        --query 'data.id' --raw-output 2>&1 | ocid_of bastion)
+  if [ -n "$BID" ]; then
+    info "Waiting for the Bastion to become ACTIVE…"
+    wait_active "bastion bastion get" --bastion-id "$BID" || BID=""
+    printf '\n'
+  fi
 fi
-if [ -z "$BID" ] || [ "$BID" = "null" ]; then
+if [ -z "$BID" ]; then
   planB "Couldn't create a Bastion automatically" <<EOF
 Create it once by hand (2 minutes, works from the phone), then re-run:
 
@@ -175,10 +198,18 @@ Both RSA and ECDSA key generation failed. Clear any stale keys and re-run:
   rm -f ~/.ssh/tempo_deploy_*
 EOF
 fi
+# create-managed-ssh does NOT accept --wait-for-state (it only knows work-request
+# states there). Create without it, grep the session OCID out of the output, then
+# poll the session's lifecycle to ACTIVE ourselves.
 SID=$(oci bastion session create-managed-ssh --bastion-id "$BID" --target-resource-id "$INST" \
       --target-os-username ubuntu --target-private-ip "$PRIVIP" --ssh-public-key-file "${KEY}.pub" \
-      --session-ttl 1800 --wait-for-state ACTIVE --query 'data.id' --raw-output 2>/dev/null || true)
-if [ -z "$SID" ] || [ "$SID" = "null" ]; then
+      --session-ttl 1800 --query 'data.id' --raw-output 2>&1 | ocid_of bastionsession)
+if [ -n "$SID" ]; then
+  info "Waiting for the SSH session to become ACTIVE…"
+  wait_active "bastion session get" --session-id "$SID" || SID=""
+  printf '\n'
+fi
+if [ -z "$SID" ]; then
   planB "The Bastion session wouldn't open (managed SSH unavailable)" <<EOF
 The Bastion exists but a managed-SSH session to the instance failed. Causes &
 fixes (try in order, re-running after each):
@@ -231,8 +262,23 @@ echo ===DEPLOY_OK===
 RSH
 )
 B64=$(printf '%s' "$REMOTE" | base64 | tr -d '\n')
-CONN=$(oci bastion session get --session-id "$SID" --query 'data."ssh-metadata".command' --raw-output 2>/dev/null)
-CONN=${CONN//<privateKey>/$KEY}
+# Read the ready-made SSH command from the session; retry a few times because
+# ssh-metadata can lag a moment after ACTIVE.
+CONN=""
+for i in $(seq 1 6); do
+  CONN=$(oci bastion session get --session-id "$SID" --query 'data."ssh-metadata".command' --raw-output 2>/dev/null || true)
+  printf '%s' "$CONN" | grep -q 'ProxyCommand' && break
+  CONN=""; sleep 5
+done
+if printf '%s' "$CONN" | grep -q 'ProxyCommand'; then
+  CONN=${CONN//<privateKey>/$KEY}
+else
+  # Fallback: build the ProxyCommand by hand. The bastion host is region-scoped;
+  # the region is the 4th dotted field of the session OCID (ocid1.bastionsession.oc1.<region>.…).
+  info "ssh-metadata not returned — using a manual ProxyCommand."
+  BREGION=$(printf '%s' "$SID" | cut -d. -f4)
+  CONN="ssh -i $KEY -o ProxyCommand=\"ssh -i $KEY -W %h:%p -p 22 $SID@host.bastion.$BREGION.oci.oraclecloud.com\" -p 22 ubuntu@$PRIVIP"
+fi
 # Disable host-key prompts on BOTH the proxy hop and the target (no interaction).
 CONN=${CONN//ssh /ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null }
 OUT=$(eval "$CONN \"echo $B64 | base64 -d | bash\"" 2>&1); RC=$?

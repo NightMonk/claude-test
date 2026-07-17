@@ -37,6 +37,16 @@ Recorded per operator instruction; these govern every future phase.
 - **Bootstrap (one time only):** installing that auto-updater requires exactly one server touch. With SSH and Run Command both unavailable, the only phone-reachable channel is **Oracle Cloud Shell + OCI Bastion** (`deploy/cloudshell-deploy.sh`, run via a single pasted one-liner). Bastion injects ephemeral access through the instance agent, so it needs **no pre-existing key**. This is unavoidable: reaching the server at all currently requires it. After it runs once, the auto-updater makes all further deploys hands-off.
 - **Consequence for phases:** Claude builds, verifies locally (headless browser + API), commits, and pushes each phase. Phases accumulate safely in GitHub and land together on the next auto-update tick. The operator's checklist per phase is browser-only (open the PWA, tap through). No terminal steps are issued to the operator beyond the single one-time bootstrap paste above.
 
+### 3b.1 Bootstrap DONE — break-glass path established (2026-07)
+
+- **Bootstrap succeeded** via Cloud Shell. The auto-updater timer (`tempo-update.timer`) is installed and enabled; the server now self-deploys within ~5 min of any push. No further terminal steps are needed for normal releases.
+- **`tempo-bastion`** (OCI Bastion, Standard — included in Always Free) now exists on the server's VCN/subnet and is the **permanent break-glass access path**. Combined with `deploy/boot.sh` (≡ `deploy/cloudshell-deploy.sh`), it is the **proven recovery tool**: re-run it from Cloud Shell any time to force a redeploy or regain access — it reuses the existing bastion and injects a fresh ephemeral key.
+- **Delivery quirks learned (baked into the script):**
+  - Cloud Shell runs in **FIPS mode** → ed25519 keys are rejected; the script uses **RSA-2048** (ECDSA fallback).
+  - `oci bastion session create-managed-ssh` does **not** accept `--wait-for-state` (that flag only takes work-request states there). The script creates without it, greps the `ocid1.bastionsession…` OCID out of the output (OCI leaks usage text on error, which otherwise poisoned the var and caused false-ACTIVE + a 404), then polls `lifecycle-state` to ACTIVE itself. Same defensive pattern applied to bastion create. A manual `ProxyCommand` fallback (region parsed from the session OCID's 4th field) covers a missing `ssh-metadata`.
+  - Safari cannot download a raw GitHub file as a real file (serves `text/plain`, no attachment disposition → "Save to Files" saves a **PDF render**). The operator delivery for `boot.sh` is **Google Drive** (real file) → Cloud Shell **Upload** → `bash boot.sh`.
+- **Secrets (Phase 5):** the repo is **PUBLIC** — no secret may ever be committed. Credentials (Anthropic key, Google OAuth id/secret) are pasted **in-app** (Settings → Smart features), POSTed over HTTPS to an authenticated endpoint, and stored **only** server-side in `/opt/tempo/data/secrets.env` (chmod 600, outside the repo, gitignored). They load into `process.env` at boot and are set live on save (AI/Google modules read env at call time → no restart). Never echoed back to any client (masked hint only).
+
 ## 4. Deploys
 
 - I (Claude Code) commit + push to GitHub. The server updates by SSH:

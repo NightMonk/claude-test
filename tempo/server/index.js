@@ -1,4 +1,6 @@
 import './env.js'; // must be first: loads .env before db/auth read process.env
+import { loadSecrets } from './secrets.js';
+loadSecrets(); // pull any operator-pasted credentials into process.env at boot
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -9,6 +11,7 @@ import tasksRouter, { reconcileRollover } from './routes/tasks.js';
 import goalsRouter from './routes/goals.js';
 import listsRouter from './routes/lists.js';
 import aiRouter from './routes/ai.js';
+import secretsRouter from './routes/secrets.js';
 import calendarRouter, { syncCalendar, startCalendarRefresh } from './routes/calendar.js';
 import { buildICS } from './ical.js';
 import { initPush, publicKey, saveSubscription, removeSubscription, startReminderLoop } from './push.js';
@@ -60,6 +63,7 @@ api.use('/tasks', tasksRouter);
 api.use('/goals', goalsRouter);
 api.use('/lists', listsRouter);
 api.use('/ai', aiRouter);
+api.use('/secrets', secretsRouter);
 api.use('/calendars', calendarRouter);
 
 // Settings (single row). Never leak the private VAPID key.
