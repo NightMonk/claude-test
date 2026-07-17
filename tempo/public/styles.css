@@ -718,3 +718,60 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* =======================================================================
+   Phase 2 — navigation transformation (>=768px).
+   Below 768px nothing here applies: bottom nav + bottom sheet stay exactly
+   as on iPhone. At >=768px the bottom nav becomes a persistent left sidebar,
+   the FAB gives way to a header "+" button, and the sheet becomes a centered
+   modal (same #sheet-body fields, just re-anchored).
+   ======================================================================= */
+.sidebar { display: none; }          /* mobile: no sidebar */
+.add-btn { display: none; }          /* mobile: the FAB adds tasks */
+
+@media (min-width: 768px) {
+  :root { --content-max: 1080px; --sidebar-w: 264px; }
+
+  /* App becomes two columns that scroll independently. */
+  #app {
+    display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+    height: 100vh; max-height: 100vh; overflow: hidden; padding-bottom: 0;
+  }
+  .tabbar, .fab { display: none; }   /* bottom nav + FAB retire */
+
+  .sidebar {
+    display: flex; flex-direction: column; gap: 2px; height: 100%; overflow-y: auto;
+    border-right: 1px solid var(--line); background: var(--surface);
+    padding: max(env(safe-area-inset-top), 16px) 12px calc(16px + env(safe-area-inset-bottom)) max(env(safe-area-inset-left), 12px);
+  }
+  .main-col { height: 100%; overflow-y: auto; display: flex; flex-direction: column; }
+  #view { max-width: 760px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; }
+  .add-btn { display: inline-flex; align-items: center; justify-content: center; }
+
+  /* Sheet -> centered modal (reuses the same fields). */
+  .sheet-backdrop { align-items: center; }
+  .sheet {
+    max-width: 480px; border-radius: var(--r-sheet); max-height: 88vh;
+    padding: 8px 24px 24px; animation: modalin .2s ease;
+  }
+  .sheet-grab { display: none; }     /* the drag handle is a phone idiom */
+}
+@keyframes modalin { from { opacity: 0; transform: translateY(12px) scale(.985); } }
+
+/* Sidebar items */
+.side-brand { display: flex; align-items: center; gap: 8px; padding: 6px 10px 14px; font-size: var(--fs-2); font-weight: 800; letter-spacing: var(--ls-head); }
+.side-brand img { width: 30px; height: 30px; border-radius: 8px; }
+.side-section { font-size: var(--fs-6); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 14px 12px 4px; }
+.side-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; min-height: 44px;
+  background: none; border: none; padding: 10px 12px; border-radius: var(--r-ctl);
+  color: var(--ink-2); font-weight: 600; font-size: var(--fs-4); transition: background-color .12s, color .12s;
+}
+.side-item:hover { background: var(--line-2); }
+.side-item.on { background: var(--accent-soft); color: var(--accent); }
+.side-item .side-ic { width: 20px; text-align: center; flex: none; color: var(--ink-3); }
+.side-item.on .side-ic { color: var(--accent); }
+.side-item .side-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--dot, var(--ink-3)); flex: none; margin: 0 4px; }
+.side-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-count { color: var(--ink-3); font-size: var(--fs-5); font-weight: 600; background: var(--surface-2); padding: 1px 8px; border-radius: var(--r-chip); }
+.side-spacer { flex: 1; }

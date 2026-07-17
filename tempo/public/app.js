@@ -306,6 +306,7 @@ async function render() {
   const v = $('#view');
   $('#back-btn').classList.toggle('hidden', !state.sub);
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === state.tab && !state.sub));
+  renderSidebar(); // keep the >=768 sidebar's active state + lists in sync
   try {
     if (state.sub?.type === 'list') return renderListDetail(state.sub.id);
     if (state.sub?.type === 'goal') return renderGoalDetail(state.sub.id);
@@ -1878,6 +1879,44 @@ function openSheet() { $('#sheet').classList.remove('hidden'); }
 function closeSheet() { $('#sheet').classList.add('hidden'); $('#sheet-body').innerHTML = ''; }
 $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
 $('#fab').addEventListener('click', openCapture);
+$('#add-btn').addEventListener('click', openCapture); // header "+" (>=768)
+
+// ---------------------------------------------------------------- sidebar (>=768)
+// Rendered on every render() so active state + list counts stay in sync. It's
+// display:none below 768px, so this is a no-op on phones.
+function renderSidebar() {
+  const sb = $('#sidebar'); if (!sb) return;
+  const s = state.sub, t = state.tab;
+  const prim = (key, ic, label) => `<button class="side-item ${t === key && !s ? 'on' : ''}" data-side="${key}"><span class="side-ic">${ic}</span><span class="side-label">${label}</span></button>`;
+  const subItem = (key, ic, label) => `<button class="side-item ${s?.type === key ? 'on' : ''}" data-side="${key}"><span class="side-ic">${ic}</span><span class="side-label">${label}</span></button>`;
+  let h = `<div class="side-brand"><img src="/icon.svg" alt=""> Tempo</div>`;
+  h += prim('today', '◎', 'My Day');
+  h += prim('upcoming', '↗', 'Next 7 Days');
+  h += prim('calendar', '▤', 'Calendar');
+  h += prim('goals', '◈', 'Goals');
+  h += `<div class="side-section">Collect</div>`;
+  h += subItem('inbox', '📥', 'Inbox');
+  h += subItem('someday', '🌙', 'Someday');
+  h += subItem('archive', '🗂', 'History');
+  h += `<div class="side-section">Lists</div>`;
+  for (const l of state.lists) {
+    h += `<button class="side-item ${s?.type === 'list' && s.id === l.id ? 'on' : ''}" data-side="list" data-id="${l.id}"><span class="side-dot" style="--dot:${esc(l.color)}"></span><span class="side-label">${esc(l.name)}</span><span class="side-count">${l.open_count || 0}</span></button>`;
+  }
+  h += `<button class="side-item" data-side="newlist"><span class="side-ic">＋</span><span class="side-label">New list</span></button>`;
+  h += `<div class="side-spacer"></div>`;
+  h += `<button class="side-item" data-side="theme"><span class="side-ic">◐</span><span class="side-label">Theme: ${esc(THEMES.find((x) => x.id === themeId())?.name || '')}</span></button>`;
+  h += subItem('settings', '⚙', 'Settings');
+  sb.innerHTML = h;
+}
+$('#sidebar').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-side]'); if (!b) return;
+  const k = b.dataset.side;
+  if (k === 'newlist') return openListEditor();
+  if (k === 'theme') { const next = THEMES[(THEMES.findIndex((x) => x.id === themeId()) + 1) % THEMES.length]; setTheme(next.id); toast('Theme: ' + next.name); renderSidebar(); return; }
+  if (k === 'list') { state.sub = { type: 'list', id: Number(b.dataset.id) }; return render().then(animateView); }
+  if (['inbox', 'someday', 'archive', 'settings'].includes(k)) { state.sub = { type: k }; return render().then(animateView); }
+  state.tab = k; state.sub = null; render().then(animateView); // primary tab
+});
 // Replay a gentle entrance on the view after a navigation change (not on
 // in-place data refreshes, which would feel busy).
 function animateView() { const v = $('#view'); if (!v) return; v.classList.remove('animate-in'); void v.offsetWidth; v.classList.add('animate-in'); }

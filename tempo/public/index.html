@@ -36,13 +36,19 @@
 
   <!-- Main app -->
   <div id="app" class="hidden">
-    <header class="topbar">
-      <button id="back-btn" class="icon-btn hidden" aria-label="Back">‹</button>
-      <h1 id="title">Today</h1>
-      <button id="more-btn" class="icon-btn" aria-label="More">⋯</button>
-    </header>
+    <!-- Persistent left nav — shown >=768px, replaces the bottom nav (JS-rendered). -->
+    <aside id="sidebar" class="sidebar" aria-label="Primary"></aside>
 
-    <main id="view"><!-- rendered by app.js --></main>
+    <div class="main-col">
+      <header class="topbar">
+        <button id="back-btn" class="icon-btn hidden" aria-label="Back">‹</button>
+        <h1 id="title">Today</h1>
+        <button id="add-btn" class="icon-btn add-btn" aria-label="Add task">＋</button>
+        <button id="more-btn" class="icon-btn" aria-label="More">⋯</button>
+      </header>
+
+      <main id="view"><!-- rendered by app.js --></main>
+    </div>
 
     <button id="fab" class="fab" aria-label="Add task">＋</button>
 
