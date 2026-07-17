@@ -139,6 +139,10 @@ api.post('/import', (req, res) => {
 
 app.use('/api', api);
 
+// --- Hidden responsive debug page (not linked anywhere; handy from a phone) ---
+// Serves the same file as /debuggrid.html but at a clean, memorable path.
+app.get('/debuggrid', (req, res) => res.sendFile(join(__dirname, '..', 'public', 'debuggrid.html')));
+
 // --- Static phone-first front end ---
 app.use(express.static(join(__dirname, '..', 'public')));
 
