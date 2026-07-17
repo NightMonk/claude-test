@@ -471,7 +471,7 @@ async function renderGoals() {
   for (const g of goals) {
     const next = g.next_action;
     const card = el(`<div class="goal-card" data-goalopen="${g.id}">
-      <div class="goal-top"><span class="goal-name">${esc(g.name)}</span><span class="goal-pct" style="color:${esc(g.color)}">${g.progress}%</span></div>
+      <div class="goal-top"><span class="goal-dot" style="background:${esc(g.color)}"></span><span class="goal-name">${esc(g.name)}</span><span class="goal-pct" style="color:${esc(g.color)}">${g.progress}%</span></div>
       <div class="bar"><i style="width:${g.progress}%;background:${esc(g.color)}"></i></div>
       ${next ? `<div class="goal-next">Next: <b>${esc(next.title)}</b> →</div>`
              : `<div class="goal-next empty-next">${g.total ? 'All steps done — set a new one' : 'Add the first small step'}</div>`}
